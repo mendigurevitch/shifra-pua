@@ -1,0 +1,27 @@
+{
+  "name": "שפרה ופועה - מערכת ניהול",
+  "short_name": "שפרה ופועה",
+  "description": "ניהול יולדות, מתנדבות, ארוחות ומתנות",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FDF2F8",
+  "theme_color": "#DB2777",
+  "lang": "he",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
