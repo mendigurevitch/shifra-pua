@@ -122,10 +122,19 @@ function loadLocal() {
 // ============================================================
 const DB = {
   async init() {
+    state = loadLocal();
+
     if (SUPABASE_READY) {
       await loadSupabaseClient();
+      const session = await getSession();
+      if (!session) return state; // מסך ההתחברות יטפל בזה
+
+      // חובה למשוך מהשרת — בלי זה כל מכשיר חי בבועה משלו
+      await pullAll();
+      return state;
     }
-    state = loadLocal();
+
+    // מצב מקומי בלבד
     if (!state.inventory.length) state.inventory = defaultInventory();
     if (!state.users.length) {
       state.users = seedState().users;
@@ -133,6 +142,11 @@ const DB = {
     }
     saveLocal();
     return state;
+  },
+
+  async refresh() {
+    if (!sb) return;
+    await pullAll();
   },
 
   get raw() { return state; },
@@ -161,7 +175,7 @@ const DB = {
   remove(collection, id) {
     state[collection] = state[collection].filter((x) => x.id !== id);
     saveLocal();
-    if (sb) sb.from(collection).delete().eq('id', id);
+    if (sb) syncDelete(collection, id);
   },
 
   // ---------- current user / permissions ----------
@@ -332,21 +346,136 @@ function nextWeekday(iso) {
 // ============================================================
 //  Supabase (נטען רק אם מולאו פרטים ב-config.js)
 // ============================================================
+
+// שמות הטבלאות ב-Postgres לא זהים לשמות האוספים בקוד
+const TABLE_OF = {
+  users: 'users', mothers: 'mothers', volunteers: 'volunteers',
+  contacts: 'contacts', inventory: 'inventory', meals: 'meals',
+  kits: 'kits', birthGifts: 'birthGifts', yearGifts: 'yearGifts',
+  events: 'events', timeline: 'timeline', notes: 'notes', orders: 'orders'
+};
+
+// ------------------------------------------------------------
+//  המרת שמות שדות
+//  הקוד עובד ב-camelCase, Postgres ב-snake_case.
+//  בלי ההמרה הזו כל כתיבה נכשלת על "column does not exist".
+// ------------------------------------------------------------
+function toSnake(s) {
+  return s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+}
+
+function toCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function rowToRecord(row) {
+  const out = {};
+  Object.entries(row).forEach(([k, v]) => { out[toCamel(k)] = v; });
+  return out;
+}
+
+function recordToRow(rec) {
+  const out = {};
+  Object.entries(rec).forEach(([k, v]) => {
+    if (v === undefined) return;
+    out[toSnake(k)] = v;
+  });
+  return out;
+}
+
 async function loadSupabaseClient() {
   await new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
     s.onload = resolve;
-    s.onerror = reject;
+    s.onerror = () => reject(new Error('לא ניתן לטעון את ספריית Supabase'));
     document.head.appendChild(s);
   });
   sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 }
 
+async function getSession() {
+  const { data } = await sb.auth.getSession();
+  return data.session || null;
+}
+
+// משיכת כל הנתונים מהשרת. RLS מחליט מה כל משתמשת בכלל רואה,
+// כך שמתנדבת מקבלת רק את השורות שלה — האכיפה היא בשרת, לא כאן.
+async function pullAll() {
+  const results = await Promise.all(
+    COLLECTIONS.map(async (c) => {
+      const { data, error } = await sb.from(TABLE_OF[c]).select('*');
+      if (error) {
+        console.warn(`pull ${c} failed:`, error.message);
+        return [c, null];
+      }
+      return [c, data.map(rowToRecord)];
+    })
+  );
+
+  results.forEach(([c, rows]) => {
+    if (rows) state[c] = rows;
+  });
+
+  // זיהוי המשתמשת המחוברת לפי auth_id
+  const session = await getSession();
+  if (session) {
+    const me = state.users.find((u) => u.authId === session.user.id);
+    if (me) state.currentUserId = me.id;
+  }
+
+  saveLocal(); // עותק מקומי לשימוש אופליין
+  return state;
+}
+
 async function syncUp(collection, rec) {
   try {
-    await sb.from(collection).upsert(rec);
+    const { error } = await sb.from(TABLE_OF[collection]).upsert(recordToRow(rec));
+    if (error) {
+      // כשל בכתיבה חייב להיות רועש — אחרת מאבדים נתונים בשקט
+      console.error(`sync ${collection} failed:`, error.message);
+      if (typeof UI !== 'undefined') UI.toast('שמירה לשרת נכשלה — בדקי חיבור');
+    }
   } catch (e) {
-    console.warn('sync failed, will retry next load', e);
+    console.error('sync failed', e);
   }
+}
+
+async function syncDelete(collection, id) {
+  try {
+    const { error } = await sb.from(TABLE_OF[collection]).delete().eq('id', id);
+    if (error) console.error(`delete ${collection} failed:`, error.message);
+  } catch (e) {
+    console.error('delete failed', e);
+  }
+}
+
+// ------------------------------------------------------------
+//  התחברות
+// ------------------------------------------------------------
+const Auth = {
+  ready: () => SUPABASE_READY,
+
+  async signIn(email, password) {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(authErrorHe(error.message));
+    await pullAll();
+  },
+
+  async signOut() {
+    await sb.auth.signOut();
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  },
+
+  async session() {
+    return sb ? getSession() : null;
+  }
+};
+
+function authErrorHe(msg) {
+  if (/Invalid login credentials/i.test(msg)) return 'מייל או סיסמה שגויים';
+  if (/Email not confirmed/i.test(msg)) return 'המייל טרם אומת';
+  if (/network|fetch/i.test(msg)) return 'אין חיבור לאינטרנט';
+  return msg;
 }

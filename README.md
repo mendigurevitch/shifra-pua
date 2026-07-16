@@ -44,12 +44,20 @@ git push -u origin main
 
 ## מעבר לסנכרון בין כולן (Supabase)
 
-1. פותחים פרויקט חינמי ב-[supabase.com](https://supabase.com)
+1. פותחים פרויקט חינמי ב-`https://supabase.com`
 2. **SQL Editor → New query** → מדביקים את כל `supabase/schema.sql` → **Run**
 3. **Authentication → Users → Add user** — יוצרים משתמשת למנהלת הראשית
 4. מריצים את שתי השורות האחרונות ב-`schema.sql` עם ה-UUID שנוצר
 5. **Settings → API** → מעתיקים `URL` ו-`anon key` אל `js/config.js`
-6. דוחפים ל-GitHub — וזהו, כולן מסונכרנות
+6. דוחפים ל-GitHub
+
+מרגע שמולאו הפרטים ב-`config.js`, האפליקציה **דורשת התחברות** עם מייל וסיסמה,
+מושכת את כל הנתונים מהשרת בכל פתיחה, וכל כתיבה מסונכרנת מיד.
+כל משתמשת מקבלת חשבון משלה דרך **Authentication → Users**, ורשומה תואמת
+בטבלת `users` עם התפקיד שלה (`admin` / `manager` / `volunteer`).
+
+> למתנדבת צריך גם למלא את `volunteer_id` ברשומת ה-`users` שלה — כך המערכת
+> יודעת אילו שיבוצים שייכים לה.
 
 מרגע זה ההרשאות נאכפות במסד עצמו (Row Level Security): מתנדבת **לא יכולה** למשוך נתונים שאינם שלה גם אם תנסה.
 

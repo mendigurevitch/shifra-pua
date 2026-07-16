@@ -485,6 +485,38 @@ function userForm(id) {
 
 // מעבר בין משתמשות — במצב מקומי זה גם מדמה כניסה לתפקידים השונים
 function userSwitcher() {
+  // במצב מחובר-לענן אין "החלפת משתמשת" — יש יציאה והתחברות מחדש
+  if (SUPABASE_READY) {
+    const me = DB.me;
+    UI.modal('החשבון שלי', `
+      <div class="row">
+        <div class="avatar">${e(UI.initials(me.name))}</div>
+        <div class="row-main">
+          <div class="row-title">${e(me.name)}</div>
+          <div class="row-sub">${e(ROLES[me.role])}</div>
+        </div>
+      </div>
+      <button class="btn btn-ghost" id="acc-refresh" style="margin-top:12px">
+        ${icon('download')} רענון נתונים מהשרת
+      </button>
+      <button class="btn btn-ghost" id="acc-out" style="margin-top:9px;color:var(--danger)">
+        ${icon('logout')} יציאה
+      </button>
+    `, (c) => {
+      c.querySelector('#acc-refresh').onclick = async () => {
+        await DB.refresh();
+        UI.closeModal();
+        UI.toast('הנתונים עודכנו');
+        render();
+      };
+      c.querySelector('#acc-out').onclick = () => {
+        UI.closeModal();
+        UI.confirm('יציאה', 'לצאת מהחשבון?', () => Auth.signOut());
+      };
+    });
+    return;
+  }
+
   const users = DB.all('users');
   UI.modal('החלפת משתמשת', `
     ${users.map((u) => `
@@ -509,10 +541,74 @@ function userSwitcher() {
 }
 
 // ------------------------------------------------------------
+//  מסך התחברות (רק כשמחוברים ל-Supabase)
+// ------------------------------------------------------------
+function renderLogin(errMsg) {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login">
+      <div class="login-card">
+        <div class="login-logo">${icon('heart', 34)}</div>
+        <div class="login-title">${e(CONFIG.ORG_NAME)}</div>
+        <div class="login-sub">מערכת ניהול</div>
+
+        <div id="lf">
+          <div class="field">
+            <label>מייל</label>
+            <input type="email" name="email" autocomplete="username" dir="ltr">
+          </div>
+          <div class="field">
+            <label>סיסמה</label>
+            <input type="password" name="password" autocomplete="current-password" dir="ltr">
+          </div>
+          ${errMsg ? `<div class="alert" style="margin-bottom:12px">
+            ${icon('alert')}<div class="alert-text">${e(errMsg)}</div>
+          </div>` : ''}
+          <button class="btn" id="lf-go">${icon('check')} כניסה</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const btn = app.querySelector('#lf-go');
+  const submit = async () => {
+    const { email, password } = UI.readForm(app.querySelector('#lf'));
+    if (!email || !password) return renderLogin('יש למלא מייל וסיסמה');
+
+    btn.disabled = true;
+    btn.innerHTML = 'מתחברת...';
+    try {
+      await Auth.signIn(email, password);
+      route = { name: 'dashboard', param: null };
+      render();
+    } catch (err) {
+      renderLogin(err.message);
+    }
+  };
+
+  btn.onclick = submit;
+  app.querySelector('[name="password"]').onkeydown = (ev) => {
+    if (ev.key === 'Enter') submit();
+  };
+}
+
+// ------------------------------------------------------------
 //  אתחול
 // ------------------------------------------------------------
 async function boot() {
-  await DB.init();
+  try {
+    await DB.init();
+  } catch (err) {
+    console.error('init failed', err);
+  }
+
+  // במצב מחובר-לענן חייבים התחברות אמיתית לפני שרואים משהו
+  if (SUPABASE_READY) {
+    const session = await Auth.session();
+    if (!session) return renderLogin();
+    if (!DB.me) return renderLogin('המשתמשת אינה מוגדרת במערכת. פני למנהלת.');
+  }
+
   render();
 
   if ('serviceWorker' in navigator) {

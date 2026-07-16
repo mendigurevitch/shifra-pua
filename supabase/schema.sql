@@ -160,7 +160,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select role from users where auth_id = auth.id() limit 1;
+  select role from users where auth_id = auth.uid() limit 1;
 $$;
 
 -- מחזיר את מזהה כרטיס המתנדבת המקושר למשתמשת המחוברת
@@ -171,7 +171,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select volunteer_id from users where auth_id = auth.id() limit 1;
+  select volunteer_id from users where auth_id = auth.uid() limit 1;
 $$;
 
 create or replace function is_staff()
@@ -251,7 +251,7 @@ create policy orders_own_read on orders for select to authenticated
 -- ---------- משתמשות ----------
 -- כל אחת רואה את עצמה; רק מנהלת ראשית מנהלת את הרשימה
 create policy users_self on users for select to authenticated
-  using (auth_id = auth.id() or is_staff());
+  using (auth_id = auth.uid() or is_staff());
 
 create policy users_admin_all on users for all to authenticated
   using (my_role() = 'admin') with check (my_role() = 'admin');
