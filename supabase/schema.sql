@@ -197,6 +197,36 @@ alter table timeline enable row level security;
 alter table notes enable row level security;
 alter table orders enable row level security;
 
+-- ------------------------------------------------------------
+--  הרשאות גישה ל-Data API.
+--  בלי אלה PostgREST מחזיר "permission denied" על כל בקשה,
+--  גם כשה-RLS מוגדר כהלכה. מפורש עדיף מהסתמכות על הגדרת
+--  "Automatically expose new tables" בממשק.
+--  זה לא פותח את הנתונים — כל שורה עדיין עוברת דרך ה-RLS.
+-- ------------------------------------------------------------
+grant usage on schema public to anon, authenticated;
+grant all on all tables in schema public to authenticated;
+grant all on all sequences in schema public to authenticated;
+
+-- ------------------------------------------------------------
+--  ל-create policy אין "if not exists", ולכן הרצה חוזרת של
+--  הקובץ הייתה נכשלת. מוחקים כל מדיניות לפני יצירתה מחדש —
+--  כך אפשר להריץ את הקובץ שוב ושוב בבטחה.
+-- ------------------------------------------------------------
+do $$
+declare
+  r record;
+begin
+  for r in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+  loop
+    execute format('drop policy if exists %I on %I.%I',
+                   r.policyname, r.schemaname, r.tablename);
+  end loop;
+end $$;
+
 -- ---------- מנהלות: גישה מלאה ----------
 -- (מנהלת משנית זהה למנהלת ראשית פרט לניהול משתמשות, שמוגבל בהמשך)
 do $$
