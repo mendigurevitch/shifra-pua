@@ -13,8 +13,10 @@
 // ============================================================
 
 const CONFIG = {
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  // המפתח הזה מיועד להיות גלוי בדפדפן. ההגנה היא ה-RLS במסד,
+  // לא הסתרת המפתח. לעולם אין לשים כאן מפתח מסוג secret/service_role.
+  SUPABASE_URL: 'https://toznuyzygngoqcoiitdk.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_9FvkD0kiDCC2A3-Q-uKezw_mbkzrRxj',
 
   ORG_NAME: 'שפרה ופועה',
 
