@@ -6,15 +6,21 @@ let route = { name: 'dashboard', param: null };
 
 const SCREENS = {
   dashboard:        { title: 'שפרה ופועה', render: screenDashboard,     bind: bindDashboard },
+  tasks:            { title: 'משימות פתוחות', render: screenTasks,      bind: bindTasks },
   mothers:          { title: 'יולדות',     render: screenMothers,       bind: bindMothers },
   'mother-profile': { title: 'פרופיל',     render: screenMotherProfile, bind: bindMotherProfile, back: 'mothers' },
   volunteers:       { title: 'מתנדבות',    render: screenVolunteers,    bind: bindVolunteers },
   meals:            { title: 'ארוחות',     render: screenMeals,         bind: bindMeals },
   kits:             { title: 'ערכות שבת',  render: screenKits,          bind: bindKits },
   gifts:            { title: 'מתנות',      render: screenGifts,         bind: bindGifts },
+  torah:            { title: 'אותיות בספר תורה', render: screenTorah,   bind: bindTorah },
   events:           { title: 'בוקר ליולדות', render: screenEvents,      bind: bindEvents },
   contacts:         { title: 'אנשי קשר',   render: screenContacts,      bind: bindContacts },
+  neighborhoods:    { title: 'שכונות',     render: screenNeighborhoods, bind: bindNeighborhoods },
   inventory:        { title: 'מלאי',       render: screenInventory,     bind: bindInventory },
+  calendar:         { title: 'לוח שנה עברי', render: screenCalendar,    bind: bindCalendar },
+  images:           { title: 'תמונות',     render: screenImages,        bind: bindImages },
+  messages:         { title: 'הודעות',     render: screenMessages,      bind: bindMessages },
   reports:          { title: 'דוחות',      render: screenReports },
   reminders:        { title: 'תזכורות',    render: screenReminders,     bind: bindReminders },
   settings:         { title: 'הגדרות',     render: screenSettings,      bind: bindSettings },
@@ -25,9 +31,9 @@ const SCREENS = {
 
 const NAV_ADMIN = [
   { id: 'dashboard', label: 'בית', icon: 'home' },
-  { id: 'mothers', label: 'יולדות', icon: 'baby' },
-  { id: 'meals', label: 'ארוחות', icon: 'utensils' },
-  { id: 'volunteers', label: 'מתנדבות', icon: 'users' },
+  { id: 'mothers', label: 'יולדות', icon: 'heart' },
+  { id: 'tasks', label: 'משימות', icon: 'filetext' },
+  { id: 'inventory', label: 'מלאי', icon: 'package' },
   { id: 'more', label: 'עוד', icon: 'menu' }
 ];
 
@@ -102,11 +108,17 @@ function render() {
 // ------------------------------------------------------------
 function screenMore() {
   const items = [
+    { id: 'tasks', label: 'משימות פתוחות', icon: 'filetext', sub: 'לפי סוג משימה' },
+    { id: 'calendar', label: 'לוח שנה עברי', icon: 'calendar', sub: 'חודש עברי ולועזי' },
     { id: 'kits', label: 'ערכות שבת', icon: 'gift', sub: 'הצעה, אישור ומסירה' },
-    { id: 'gifts', label: 'מתנות', icon: 'package', sub: 'לידה · גיל שנה · אות בספר תורה' },
+    { id: 'gifts', label: 'מתנות', icon: 'package', sub: 'לידה · גיל שנה' },
+    { id: 'torah', label: 'אותיות בספר תורה', icon: 'scroll', sub: 'רשימה וייצוא לאקסל' },
     { id: 'events', label: 'בוקר ליולדות', icon: 'coffee', sub: 'מפגש חודשי ונוכחות' },
+    { id: 'neighborhoods', label: 'שכונות', icon: 'mappin', sub: 'יולדות לפי אזור' },
     { id: 'contacts', label: 'אנשי קשר', icon: 'mappin', sub: 'נקודות איסוף לפי שכונה' },
-    { id: 'inventory', label: 'מלאי ציוד', icon: 'package', sub: 'חד פעמי והזמנות' },
+    { id: 'inventory', label: 'מלאי ציוד', icon: 'package', sub: 'חד פעמי וערכות מתנה' },
+    { id: 'images', label: 'תמונות', icon: 'filetext', sub: 'קבצים ותמונות' },
+    { id: 'messages', label: 'הודעות', icon: 'message', sub: 'בין המנהלות' },
     { id: 'reminders', label: 'מרכז תזכורות', icon: 'bell', sub: 'כל מה שדורש טיפול' },
     { id: 'reports', label: 'דוחות', icon: 'chart', sub: 'סטטיסטיקות וסיכומים' },
     { id: 'settings', label: 'הגדרות והרשאות', icon: 'settings', sub: 'משתמשות ותצורה' }

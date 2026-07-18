@@ -9,89 +9,97 @@ function screenDashboard() {
   const me = DB.me;
   const mothers = DB.all('mothers').filter((m) => m.status === 'active');
   const today = todayISO();
-  const todayMeals = DB.all('meals').filter((m) => m.date === today && m.status !== 'cancelled');
   const weekEnd = addDays(today, 7);
   const weekMeals = DB.all('meals').filter((m) => m.date >= today && m.date <= weekEnd && m.status !== 'cancelled');
-  const pendingGifts = DB.all('birthGifts').filter((g) => g.status === 'pending').length
-    + DB.all('yearGifts').filter((g) => g.status === 'pending').length;
+  const lowStock = DB.lowStock();
+  const notes = me.role === 'admin' ? DB.all('notes').filter((n) => !n.read) : [];
 
-  const alerts = DB.alerts();
-  const birthdays = DB.upcomingBirthdays();
+  // מתנות גיל שנה שדורשות טיפול (עד שבוע לפני יום ההולדת)
+  const yearDue = DB.all('yearGifts').filter((g) => {
+    if (g.status === 'done' || !g.dueDate) return false;
+    const left = daysBetween(today, g.dueDate);
+    return left <= CONFIG.YEAR_GIFT_REMINDER_DAYS && left >= -30;
+  });
 
-  // הערות מהמנהלת המשנית — באנר עליון אצל המנהלת הראשית
-  const notes = me.role === 'admin'
-    ? DB.all('notes').filter((n) => !n.read)
-    : [];
-
-  const hour = new Date().getHours();
-  const greet = hour < 12 ? 'בוקר טוב' : hour < 18 ? 'צהריים טובים' : 'ערב טוב';
+  const quickActions = [
+    { id: 'tasks', label: 'משימות', icon: 'filetext' },
+    { id: 'torah', label: 'אות בס״ת', icon: 'scroll' },
+    { id: 'events', label: 'אירועים', icon: 'coffee' },
+    { id: 'gifts', label: 'מתנות', icon: 'gift' },
+    { id: 'inventory', label: 'מלאי', icon: 'package' },
+    { id: 'neighborhoods', label: 'שכונות', icon: 'mappin' },
+    { id: 'volunteers', label: 'מתנדבות', icon: 'users' },
+    { id: 'mothers', label: 'יולדות', icon: 'heart' }
+  ];
 
   return `
-    <div class="hero">
-      <div class="hero-greet">${greet},</div>
-      <div class="hero-name">${e(me.name)}</div>
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('home')} מסך הבית</h2>
+        <div class="screen-sub">סקירה מהירה של הפעילות בארגון</div>
+      </div>
+      <button class="icon-btn" id="go-cal">${icon('calendar')}</button>
     </div>
 
-    ${notes.map((n) => {
-      const from = DB.find('users', n.fromUserId);
-      return `
-        <div class="banner" data-note="${n.id}">
-          ${icon('message')}
-          <div style="flex:1">
-            <div class="banner-text">${e(n.text)}</div>
-            <div class="banner-meta">${e(from ? from.name : 'מנהלת משנית')} · ${relativeDay(n.date)}</div>
-          </div>
-          <button class="icon-btn" data-read="${n.id}">${icon('check')}</button>
-        </div>`;
-    }).join('')}
+    ${yearDue.length ? `
+      <div class="task-card-green">
+        <div class="task-card-title">${icon('cake', 16)} מתנות גיל שנה — לטיפול (${yearDue.length})</div>
+        ${yearDue.slice(0, 3).map((g) => {
+          const m = DB.find('mothers', g.motherId);
+          if (!m) return '';
+          return `
+            <div class="task-row" data-mother="${g.motherId}">
+              <div>
+                <div class="row-title">${e(m.childName || m.motherName)} ${e(m.lastName || '')}</div>
+                <div class="row-sub">יום הולדת ${relativeDay(g.dueDate)}</div>
+              </div>
+              <span class="badge ${g.contactId ? 'warn' : 'danger'}">${g.contactId ? 'ממתין' : 'ללא איש קשר'}</span>
+            </div>`;
+        }).join('')}
+      </div>` : ''}
 
-    <div class="stat-grid">
+    <div class="stat-grid stat-grid-3">
+      <div class="stat" data-go="inventory">
+        <div class="stat-ico warn">${icon('alert', 20)}</div>
+        <div class="stat-num" style="color:var(--danger)">${lowStock.length}</div>
+        <div class="stat-label">מלאי נמוך</div>
+      </div>
+      <div class="stat" data-go="messages">
+        <div class="stat-ico">${icon('message', 20)}</div>
+        <div class="stat-num">${notes.length}</div>
+        <div class="stat-label">הודעות חדשות</div>
+      </div>
       <div class="stat" data-go="mothers">
+        <div class="stat-ico pink">${icon('heart', 20)}</div>
         <div class="stat-num" style="color:var(--primary)">${mothers.length}</div>
-        <div class="stat-label">יולדות פעילות</div>
-      </div>
-      <div class="stat" data-go="meals">
-        <div class="stat-num" style="color:var(--ok)">${todayMeals.length}</div>
-        <div class="stat-label">ארוחות היום</div>
-      </div>
-      <div class="stat" data-go="meals">
-        <div class="stat-num" style="color:var(--info)">${weekMeals.length}</div>
-        <div class="stat-label">ארוחות השבוע</div>
-      </div>
-      <div class="stat" data-go="gifts">
-        <div class="stat-num" style="color:var(--accent)">${pendingGifts}</div>
-        <div class="stat-label">מתנות ממתינות</div>
+        <div class="stat-label">יולדות</div>
       </div>
     </div>
 
-    ${alerts.length ? `
-      <div class="section-title">${icon('alert')} התראות</div>
-      ${alerts.map((a) => `
-        <div class="alert ${a.level === 'danger' ? '' : a.level}">
-          ${icon('alert')}
-          <div class="alert-text">${e(a.text)}</div>
-        </div>`).join('')}
-    ` : ''}
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;gap:7px;margin-bottom:${notes.length ? '12px' : '0'}">
+        ${icon('message', 16)} הודעות מהמנהלה
+      </div>
+      ${notes.length ? notes.map((n) => {
+        const from = DB.find('users', n.fromUserId);
+        return `
+          <div class="task-row" data-note="${n.id}">
+            <div>
+              <div class="row-title">${e(n.text)}</div>
+              <div class="row-sub">${e(from ? from.name : 'מנהלת משנית')} · ${relativeDay(n.date)}</div>
+            </div>
+            <button class="icon-btn" data-read="${n.id}">${icon('check', 15)}</button>
+          </div>`;
+      }).join('') : '<div class="empty-inline">אין הודעות חדשות</div>'}
+    </div>
 
-    ${todayMeals.length ? `
-      <div class="section-title">${icon('utensils')} ארוחות היום</div>
-      ${todayMeals.map((m) => mealRow(m)).join('')}
-    ` : ''}
-
-    ${birthdays.length ? `
-      <div class="section-title">${icon('cake')} ימי הולדת קרובים</div>
-      ${birthdays.map(({ v, days }) => `
-        <div class="row">
-          <div class="avatar">${e(UI.initials(v.name))}</div>
-          <div class="row-main">
-            <div class="row-title">${e(v.name)}</div>
-            <div class="row-sub">${days === 0 ? 'היום! 🎉' : `בעוד ${days} ימים`}</div>
-          </div>
-          <button class="icon-btn wa" data-bday="${v.id}">${icon('whatsapp')}</button>
-        </div>`).join('')}
-    ` : ''}
-
-    ${!mothers.length && !alerts.length ? UI.empty('heart', 'ברוכה הבאה!', 'התחילי בהוספת יולדת ראשונה מהמסך "יולדות"') : ''}
+    <div class="quick-actions">
+      ${quickActions.map((a) => `
+        <button class="quick-action" data-qa="${a.id}">
+          <div class="quick-action-ico">${icon(a.icon, 20)}</div>
+          <span>${e(a.label)}</span>
+        </button>`).join('')}
+    </div>
   `;
 }
 
@@ -99,6 +107,17 @@ function bindDashboard(root) {
   root.querySelectorAll('[data-go]').forEach((el) => {
     el.onclick = () => go(el.dataset.go);
   });
+
+  root.querySelectorAll('[data-qa]').forEach((el) => {
+    el.onclick = () => go(el.dataset.qa);
+  });
+
+  root.querySelectorAll('[data-mother]').forEach((el) => {
+    el.onclick = () => go('mother-profile', el.dataset.mother);
+  });
+
+  const cal = root.querySelector('#go-cal');
+  if (cal) cal.onclick = () => go('calendar');
 
   root.querySelectorAll('[data-read]').forEach((el) => {
     el.onclick = (ev) => {
@@ -118,15 +137,89 @@ function bindDashboard(root) {
 }
 
 // ------------------------------------------------------------
+//  משימות פתוחות (קנבן)
+// ------------------------------------------------------------
+function screenTasks() {
+  const today = todayISO();
+  const activeMothers = DB.all('mothers').filter((m) => m.status === 'active');
+
+  // עמודה 1: להזמין אות בס"ת
+  const torah = DB.all('birthGifts').filter((g) => !g.letterOrdered).map((g) => DB.find('mothers', g.motherId)).filter(Boolean);
+
+  // עמודה 2: ערכות שבת שהגיע זמן להציע
+  const kits = activeMothers.filter((m) => {
+    const due = DB.kitDueDate(m.id);
+    return due && daysBetween(today, due) <= 0 && !DB.all('kits').find((k) => k.motherId === m.id && k.deliveredAt);
+  });
+
+  // עמודה 3: לשבץ ארוחות (ארוחות עתידיות בלי מכינה/משנעת)
+  const mealMothers = {};
+  DB.all('meals').filter((m) => m.date >= today && m.status === 'pending' && (!m.cookId || !m.driverId))
+    .forEach((m) => { mealMothers[m.motherId] = true; });
+  const meals = Object.keys(mealMothers).map((id) => DB.find('mothers', id)).filter(Boolean);
+
+  // עמודה 4: מתנת גיל שנה
+  const yearG = DB.all('yearGifts').filter((g) => g.status !== 'done').map((g) => DB.find('mothers', g.motherId)).filter(Boolean);
+
+  // עמודה 5: מתנה אחרי לידה
+  const afterBirth = DB.all('birthGifts').filter((g) => g.status !== 'done').map((g) => DB.find('mothers', g.motherId)).filter(Boolean);
+
+  const cols = [
+    { title: 'להזמין אות בס״ת', icon: 'scroll', list: torah },
+    { title: 'ערכות שבת', icon: 'gift', list: kits },
+    { title: 'לשבץ ארוחות', icon: 'utensils', list: meals },
+    { title: 'מתנת גיל שנה', icon: 'cake', list: yearG },
+    { title: 'מתנה אחרי לידה', icon: 'gift', list: afterBirth }
+  ];
+
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('filetext')} משימות פתוחות</h2>
+        <div class="screen-sub">יולדות שממתינות לטיפול לפי סוג משימה</div>
+      </div>
+    </div>
+
+    <div class="kanban">
+      ${cols.map((col, i) => `
+        <div class="kanban-col c${i}">
+          <div class="kanban-head">
+            <span>${icon(col.icon, 15)} ${e(col.title)}</span>
+            <span class="count">${col.list.length}</span>
+          </div>
+          <div class="kanban-body">
+            ${col.list.length ? col.list.map((m) => `
+              <div class="kanban-item" data-mother="${m.id}">
+                <div>
+                  <div class="ki-name">${e(m.motherName)} ${e(m.lastName || '')}</div>
+                  <div class="ki-sub">${e(nbhdName(m.neighborhood))}</div>
+                </div>
+                ${icon('check', 16)}
+              </div>`).join('')
+              : '<div class="kanban-empty">אין</div>'}
+          </div>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+function bindTasks(root) {
+  root.querySelectorAll('[data-mother]').forEach((el) => {
+    el.onclick = () => go('mother-profile', el.dataset.mother);
+  });
+}
+
+// ------------------------------------------------------------
 //  יולדות
 // ------------------------------------------------------------
-let mothersFilter = { q: '', nbhd: '', status: 'active' };
+let mothersFilter = { q: '', nbhd: '', status: 'active', stage: '' };
 
 function screenMothers() {
   let list = DB.all('mothers');
 
   if (mothersFilter.status) list = list.filter((m) => m.status === mothersFilter.status);
   if (mothersFilter.nbhd) list = list.filter((m) => m.neighborhood === mothersFilter.nbhd);
+  if (mothersFilter.stage) list = list.filter((m) => currentStage(m) === mothersFilter.stage);
   if (mothersFilter.q) {
     const q = mothersFilter.q.toLowerCase();
     list = list.filter((m) =>
@@ -139,16 +232,34 @@ function screenMothers() {
 
   list.sort((a, b) => (b.birthDate || '').localeCompare(a.birthDate || ''));
 
+  const total = DB.all('mothers').length;
+
   return `
-    <div class="search-box">
-      ${icon('search')}
-      <input id="m-search" placeholder="חיפוש לפי שם או טלפון..." value="${escapeAttr(mothersFilter.q)}">
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('heart')} יולדות</h2>
+        <div class="screen-sub">ניהול יולדות במערכת (${total})</div>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-bottom:12px">
+      <button class="btn btn-sm" id="add-mother">${icon('plus')} הוספת יולדת</button>
+      <button class="btn btn-ghost btn-sm" id="import-xls">${icon('filetext')} ייבוא אקסל</button>
+      <button class="btn btn-ghost btn-sm" id="add-ai">${icon('message')} מהודעה</button>
     </div>
 
     <div class="chips">
-      <button class="chip ${mothersFilter.status === 'active' ? 'active' : ''}" data-status="active">פעילות</button>
-      <button class="chip ${mothersFilter.status === 'done' ? 'active' : ''}" data-status="done">סיימו מסלול</button>
-      <button class="chip ${mothersFilter.status === '' ? 'active' : ''}" data-status="">הכל</button>
+      <button class="chip ${mothersFilter.stage === '' || !mothersFilter.stage ? 'active' : ''}" data-stage="">כל היולדות</button>
+      <button class="chip ${mothersFilter.stage === 'meals' ? 'active' : ''}" data-stage="meals">ארוחות</button>
+      <button class="chip ${mothersFilter.stage === 'shabbat' ? 'active' : ''}" data-stage="shabbat">שבת</button>
+      <button class="chip ${mothersFilter.stage === 'torah' ? 'active' : ''}" data-stage="torah">אות</button>
+      <button class="chip ${mothersFilter.stage === 'birthGift' ? 'active' : ''}" data-stage="birthGift">מתנה</button>
+      <button class="chip ${mothersFilter.stage === 'yearGift' ? 'active' : ''}" data-stage="yearGift">גיל שנה</button>
+    </div>
+
+    <div class="search-box">
+      ${icon('search')}
+      <input id="m-search" placeholder="חיפוש לפי שם..." value="${escapeAttr(mothersFilter.q)}">
     </div>
 
     <div class="chips">
@@ -158,38 +269,71 @@ function screenMothers() {
       `).join('')}
     </div>
 
-    ${list.length ? list.map((m) => {
-      const meals = DB.mealsFor(m.id);
-      const done = meals.filter((x) => x.status === 'done').length;
-      return `
-        <div class="card" data-mother="${m.id}">
-          <div class="card-row">
-            <div class="avatar">${e(UI.initials(m.motherName))}</div>
-            <div style="flex:1;min-width:0">
-              <div class="card-title">${e(m.motherName)} ${e(m.lastName || '')}</div>
-              <div class="card-sub">${e(m.childName || '')}${m.birthDate ? ` · נולד/ה ${fmtDate(m.birthDate)}` : ''}</div>
-            </div>
-            ${UI.nbhdBadge(m.neighborhood)}
-          </div>
-          <div style="display:flex;gap:6px;margin-top:11px;flex-wrap:wrap">
-            <span class="badge ${done === meals.length && meals.length ? 'ok' : 'muted'}">
-              ${icon('utensils', 12)} ארוחות ${done}/${meals.length}
-            </span>
-            ${giftBadge(m.id)}
-          </div>
-        </div>`;
-    }).join('') : UI.empty('baby', 'אין יולדות להצגה', 'לחצי על + כדי להוסיף יולדת חדשה')}
-
-    <button class="fab" id="add-mother">${icon('plus')}</button>
+    <div class="mother-grid">
+      ${list.length ? list.map((m) => motherCard(m)).join('')
+        : UI.empty('baby', 'אין יולדות להצגה', 'לחצי על "הוספת יולדת"')}
+    </div>
   `;
 }
 
-function giftBadge(motherId) {
-  const bg = DB.all('birthGifts').find((g) => g.motherId === motherId);
-  if (!bg) return '';
-  return bg.status === 'done'
-    ? `<span class="badge ok">${icon('gift', 12)} מתנת לידה נמסרה</span>`
-    : `<span class="badge warn">${icon('gift', 12)} מתנת לידה ממתינה</span>`;
+// אייקוני שלבים בכרטיס — הפעיל מודגש בוורוד
+function stageIcons(m) {
+  const stages = [
+    { id: 'yearGift', icon: 'cake', label: 'גיל שנה' },
+    { id: 'birthGift', icon: 'gift', label: 'מתנה' },
+    { id: 'torah', icon: 'scroll', label: 'אות' },
+    { id: 'shabbat', icon: 'utensils', label: 'שבת' },
+    { id: 'meals', icon: 'coffee', label: 'ארוחות' }
+  ];
+  const active = currentStage(m);
+  return `<div class="stage-icons">
+    ${stages.map((s) => `
+      <div class="stage-ico ${active === s.id ? 'active' : ''}" title="${s.label}">
+        ${icon(s.icon, 15)}<span>${s.label}</span>
+      </div>`).join('')}
+  </div>`;
+}
+
+// השלב הנוכחי של היולדת במסלול
+function currentStage(m) {
+  const meals = DB.mealsFor(m.id);
+  const mealsDone = meals.length && meals.every((x) => x.status === 'done' || x.status === 'cancelled');
+  if (!mealsDone) return 'meals';
+  const kit = DB.all('kits').find((k) => k.motherId === m.id);
+  if (!kit || !kit.deliveredAt) return 'shabbat';
+  const bg = DB.all('birthGifts').find((g) => g.motherId === m.id);
+  if (bg && bg.status !== 'done') return 'birthGift';
+  return 'yearGift';
+}
+
+function wazeLink(address) {
+  return `https://waze.com/ul?q=${encodeURIComponent(address || '')}&navigate=yes`;
+}
+
+function motherCard(m) {
+  const color = nbhdColor(m.neighborhood);
+  return `
+    <div class="mother-card" style="border-inline-start:4px solid ${color}">
+      <div class="mc-top">
+        <div class="mc-name-row">
+          <span class="mc-name">${e(m.motherName)} ${e(m.lastName || '')}</span>
+          <button class="mc-clock" data-profile="${m.id}">${icon('clock', 15)}</button>
+        </div>
+        ${m.neighborhood ? `<span class="mc-nbhd" style="background:${color}1F;color:${color}">${e(nbhdName(m.neighborhood))}</span>` : ''}
+      </div>
+
+      <div class="mc-info">
+        ${m.phone ? `<a class="mc-line" href="tel:${escapeAttr(m.phone)}">${icon('phone', 13)} ${e(m.phone)}</a>` : ''}
+        ${m.address ? `<div class="mc-line">${icon('mappin', 13)} ${e(m.address)}</div>` : ''}
+      </div>
+
+      <div class="mc-actions">
+        ${m.address ? `<a class="mc-btn waze" href="${wazeLink(m.address)}" target="_blank">${icon('mappin', 13)} Waze</a>` : ''}
+        <button class="mc-btn" data-edit="${m.id}">${icon('edit', 13)} עריכה</button>
+      </div>
+
+      ${stageIcons(m)}
+    </div>`;
 }
 
 function bindMothers(root) {
@@ -209,20 +353,34 @@ function bindMothers(root) {
     el.onclick = () => { mothersFilter.status = el.dataset.status; render(); };
   });
 
+  root.querySelectorAll('[data-stage]').forEach((el) => {
+    el.onclick = () => { mothersFilter.stage = el.dataset.stage; render(); };
+  });
+
   root.querySelectorAll('[data-nbhd]').forEach((el) => {
     el.onclick = () => { mothersFilter.nbhd = el.dataset.nbhd; render(); };
   });
 
-  root.querySelectorAll('[data-mother]').forEach((el) => {
-    el.onclick = () => go('mother-profile', el.dataset.mother);
+  // כרטיס שלם → פרופיל; שעון או "עריכה" מטופלים בנפרד
+  root.querySelectorAll('[data-profile]').forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); go('mother-profile', el.dataset.profile); };
+  });
+  root.querySelectorAll('[data-edit]').forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); motherForm(el.dataset.edit); };
   });
 
   const add = root.querySelector('#add-mother');
   if (add) add.onclick = () => motherForm();
+
+  const imp = root.querySelector('#import-xls');
+  if (imp) imp.onclick = () => importMothersExcel();
+
+  const ai = root.querySelector('#add-ai');
+  if (ai) ai.onclick = () => motherFromMessage();
 }
 
-function motherForm(id) {
-  const m = id ? DB.find('mothers', id) : {};
+function motherForm(id, prefill) {
+  const m = id ? DB.find('mothers', id) : (prefill || {});
   UI.modal(id ? 'עריכת יולדת' : 'יולדת חדשה', `
     <div id="mf">
       <div class="field-row">
@@ -259,6 +417,109 @@ function motherForm(id) {
       }
       UI.closeModal();
       render();
+    };
+  });
+}
+
+// ------------------------------------------------------------
+//  הוספת יולדת מהודעת טקסט חופשי
+//  מנתח שם/טלפון/כתובת/קוד מתוך טקסט (למשל הודעת וואטסאפ)
+// ------------------------------------------------------------
+function parseMotherText(text) {
+  const out = {};
+  // טלפון ישראלי
+  const phone = text.match(/0\d[-\s]?\d{3}[-\s]?\d{4}|0\d{8,9}/);
+  if (phone) out.phone = phone[0].replace(/[-\s]/g, '');
+
+  // קוד כניסה
+  const code = text.match(/קוד[:\s]*([0-9]{2,6}#?)/);
+  if (code) out.entryCode = code[1];
+
+  // שכונה
+  const nb = NEIGHBORHOODS.find((n) => text.includes(n.name) || (n.id === 'gimel' && /רמת אביב ג/.test(text)));
+  if (nb) out.neighborhood = nb.id;
+
+  // כתובת: שורה שמכילה מספר בית (רחוב + מספר)
+  const addr = text.match(/([א-ת'"]+(?:\s[א-ת'"]+)*\s\d{1,3})/);
+  if (addr && !/^0/.test(addr[1])) out.address = addr[1].trim();
+
+  // שם: הראשון אחרי "שם" או המילים הראשונות
+  const nameM = text.match(/(?:שם|יולדת|ילדה)[:\s]+([א-ת]+(?:\s[א-ת]+)?)/);
+  if (nameM) out.motherName = nameM[1].trim();
+  else {
+    const firstWords = text.trim().split(/[\s,]+/).slice(0, 2).filter((w) => /^[א-ת]+$/.test(w));
+    if (firstWords.length) out.motherName = firstWords.join(' ');
+  }
+  return out;
+}
+
+function motherFromMessage() {
+  UI.modal('הוספה מהודעת טקסט', `
+    <div class="card-sub" style="margin-bottom:12px;line-height:1.6">
+      הדביקי הודעה שמכילה פרטי יולדת. המערכת תזהה שם, טלפון, כתובת וקוד — ותמלא כרטיס.
+    </div>
+    <div id="ai">
+      ${UI.textarea('טקסט ההודעה', 'text', '')}
+      <button class="btn" id="ai-parse">${icon('message')} פענוח</button>
+    </div>
+  `, (c) => {
+    c.querySelector('#ai-parse').onclick = () => {
+      const { text } = UI.readForm(c.querySelector('#ai'));
+      if (!text) return UI.toast('הדביקי טקסט');
+      const parsed = parseMotherText(text);
+      if (!parsed.notes) parsed.notes = text.slice(0, 300);
+      UI.closeModal();
+      // פותח את טופס היולדת עם השדות שזוהו
+      motherFormPrefilled(parsed);
+    };
+  });
+}
+
+// טופס יולדת עם ערכים שזוהו מראש
+function motherFormPrefilled(data) {
+  motherForm(null, data);
+}
+
+// ------------------------------------------------------------
+//  ייבוא יולדות מאקסל (CSV)
+// ------------------------------------------------------------
+function importMothersExcel() {
+  UI.modal('ייבוא מאקסל', `
+    <div class="card-sub" style="margin-bottom:12px;line-height:1.6">
+      קובץ CSV עם עמודות: שם האמא, שם משפחה, שם הילד, טלפון, שכונה, כתובת, תאריך לידה.
+      השורה הראשונה = כותרות.
+    </div>
+    <button class="btn" id="xls-pick">${icon('download')} בחירת קובץ</button>
+  `, (c) => {
+    c.querySelector('#xls-pick').onclick = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv,text/csv';
+      input.onchange = () => {
+        const f = input.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const rows = String(reader.result).replace(/^﻿/, '').split(/\r?\n/).filter((r) => r.trim());
+          let count = 0;
+          rows.slice(1).forEach((line) => {
+            const cols = line.split(',').map((s) => s.replace(/^"|"$/g, '').trim());
+            if (!cols[0]) return;
+            const nb = NEIGHBORHOODS.find((n) => n.name === cols[4]);
+            DB.addMother({
+              motherName: cols[0], lastName: cols[1] || '', childName: cols[2] || '',
+              phone: cols[3] || '', neighborhood: nb ? nb.id : '', address: cols[5] || '',
+              birthDate: cols[6] || ''
+            });
+            count++;
+          });
+          UI.closeModal();
+          UI.toast(`יובאו ${count} יולדות`);
+          render();
+        };
+        reader.readAsText(f);
+      };
+      input.click();
     };
   });
 }
@@ -579,38 +840,117 @@ function contactForm(id) {
 // ------------------------------------------------------------
 //  מלאי
 // ------------------------------------------------------------
+let invTab = 'oneTime';
+
 function screenInventory() {
-  const list = DB.all('inventory');
+  const all = DB.all('inventory');
   const low = DB.lowStock();
+  const list = all.filter((i) => (i.category || 'other') === invTab);
 
   return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('package')} מלאי</h2>
+        <div class="screen-sub">ניהול חד-פעמי וערכות מתנה</div>
+      </div>
+      <button class="btn btn-sm" id="add-inv" style="width:auto">${icon('plus')} פריט חדש</button>
+    </div>
+
     ${low.length ? `
-      <div class="alert warn">
-        ${icon('alert')}
-        <div class="alert-text">${low.length} פריטים הגיעו לסף המינימום</div>
+      <div class="low-panel">
+        <div class="low-panel-title">${icon('alert', 15)} פריטים במלאי נמוך (${low.length})</div>
+        <div class="low-chips">
+          ${low.map((i) => `<span class="low-chip">${e(i.name)} ${i.qty}/${i.minQty}</span>`).join('')}
+        </div>
       </div>` : ''}
 
-    ${list.map((i) => `
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">${e(i.name)}</div>
-          <div class="row-sub">סף התראה: ${i.minQty}</div>
-        </div>
-        <div class="qty-badge ${i.qty <= i.minQty ? 'low' : ''}">${i.qty}</div>
-        <button class="icon-btn" data-inv="${i.id}">${icon('edit')}</button>
-      </div>`).join('')}
+    <div class="chips inv-tabs">
+      ${INV_CATEGORIES.map((c) => `
+        <button class="chip ${invTab === c.id ? 'active' : ''}" data-invtab="${c.id}">${e(c.name)}</button>
+      `).join('')}
+    </div>
 
-    <button class="btn btn-ghost" id="view-orders" style="margin-top:10px">
+    <div class="inv-grid">
+      ${list.length ? list.map((i) => invCard(i)).join('')
+        : UI.empty('package', 'אין פריטים בקטגוריה זו', 'לחצי על "פריט חדש" להוספה')}
+    </div>
+
+    <button class="btn btn-ghost" id="view-orders" style="margin-top:14px">
       ${icon('filetext')} היסטוריית הזמנות מתנדבות
     </button>
-
-    <button class="fab" id="add-inv">${icon('plus')}</button>
   `;
 }
 
+function invCard(i) {
+  const empty = i.qty <= 0;
+  const low = i.qty <= i.minQty;
+  return `
+    <div class="inv-card ${low ? 'low' : ''}">
+      <div class="inv-card-top">
+        <div class="inv-name">${e(i.name)}</div>
+        <button class="inv-edit" data-inv="${i.id}">${icon('edit', 15)}</button>
+      </div>
+      <div class="inv-qty ${empty ? 'zero' : ''}">${i.qty}</div>
+      <div class="inv-meta">${e(i.unit || 'יח')}׳ · מינימום ${i.minQty}</div>
+      <div class="inv-actions">
+        <button class="inv-del" data-invdel="${i.id}">${icon('trash', 15)}</button>
+        <button class="inv-order" data-invorder="${i.id}" title="הזמנה">${icon('package', 15)}</button>
+        <button class="inv-step" data-invplus="${i.id}">${icon('plus', 16)}</button>
+        <button class="inv-step" data-invminus="${i.id}" ${empty ? 'disabled' : ''}>${icon('minus', 16)}</button>
+      </div>
+    </div>`;
+}
+
 function bindInventory(root) {
+  root.querySelectorAll('[data-invtab]').forEach((el) => {
+    el.onclick = () => { invTab = el.dataset.invtab; render(); };
+  });
+
   root.querySelectorAll('[data-inv]').forEach((el) => {
     el.onclick = () => inventoryForm(el.dataset.inv);
+  });
+
+  // כפתורי +/- מעדכנים במקום בלי לרנדר הכל מחדש (מהיר וחלק)
+  root.querySelectorAll('[data-invplus]').forEach((el) => {
+    el.onclick = () => {
+      const item = DB.find('inventory', el.dataset.invplus);
+      DB.update('inventory', item.id, { qty: item.qty + 1 });
+      render();
+    };
+  });
+  root.querySelectorAll('[data-invminus]').forEach((el) => {
+    el.onclick = () => {
+      const item = DB.find('inventory', el.dataset.invminus);
+      DB.update('inventory', item.id, { qty: Math.max(0, item.qty - 1) });
+      render();
+    };
+  });
+
+  root.querySelectorAll('[data-invdel]').forEach((el) => {
+    el.onclick = () => {
+      const item = DB.find('inventory', el.dataset.invdel);
+      UI.confirm('מחיקת פריט', `למחוק את ${e(item.name)}?`, () => { DB.remove('inventory', item.id); render(); });
+    };
+  });
+
+  root.querySelectorAll('[data-invorder]').forEach((el) => {
+    el.onclick = () => {
+      const item = DB.find('inventory', el.dataset.invorder);
+      UI.modal(`הזמנת ${e(item.name)}`, `
+        <div id="ordf">
+          ${UI.field('כמה להוסיף למלאי?', 'add', 0, 'number')}
+          <button class="btn" id="ordf-save">${icon('check')} עדכון מלאי</button>
+        </div>
+      `, (c) => {
+        c.querySelector('#ordf-save').onclick = () => {
+          const { add } = UI.readForm(c.querySelector('#ordf'));
+          DB.update('inventory', item.id, { qty: item.qty + (add || 0) });
+          UI.closeModal();
+          UI.toast('המלאי עודכן');
+          render();
+        };
+      });
+    };
   });
 
   root.querySelector('#add-inv').onclick = () => inventoryForm();
@@ -636,14 +976,17 @@ function bindInventory(root) {
 }
 
 function inventoryForm(id) {
-  const i = id ? DB.find('inventory', id) : { qty: 0, minQty: 10 };
+  const i = id ? DB.find('inventory', id) : { qty: 0, minQty: 5, category: invTab, unit: 'יח' };
   UI.modal(id ? 'עריכת פריט' : 'פריט חדש', `
     <div id="if">
       ${UI.field('שם הפריט *', 'name', i.name)}
+      ${UI.select('קטגוריה', 'category', i.category || invTab,
+        INV_CATEGORIES.map((c) => ({ value: c.id, label: c.name })))}
       <div class="field-row">
         ${UI.field('כמות נוכחית', 'qty', i.qty, 'number')}
         ${UI.field('סף מינימום', 'minQty', i.minQty, 'number')}
       </div>
+      ${UI.field('יחידה (יח׳ / שקיות וכו׳)', 'unit', i.unit || 'יח')}
       <button class="btn" id="if-save">${icon('check')} שמירה</button>
       ${id ? `<button class="btn btn-ghost" id="if-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקה</button>` : ''}
     </div>
@@ -653,6 +996,8 @@ function inventoryForm(id) {
       if (!data.name) return UI.toast('חובה למלא שם');
       data.qty = data.qty || 0;
       data.minQty = data.minQty || 0;
+      data.category = data.category || 'other';
+      data.unit = data.unit || 'יח';
       if (id) DB.update('inventory', id, data);
       else DB.insert('inventory', data);
       UI.closeModal();

@@ -787,3 +787,319 @@ function screenReports() {
     </div>
   `;
 }
+
+// ============================================================
+//  לוח שנה עברי
+// ============================================================
+let calOffset = 0; // חודשים מהיום
+
+// המרת מספר לגימטריה עברית (למשל 786 -> תשפ״ו, 5 -> ה׳)
+function gematria(num) {
+  if (!num) return '';
+  const ones = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+  const tens = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'];
+  const hundreds = ['', 'ק', 'ר', 'ש', 'ת', 'תק', 'תר', 'תש', 'תת', 'תתק'];
+  let n = num % 1000; // מורידים את האלפים (5786 -> 786)
+  let s = hundreds[Math.floor(n / 100)];
+  n %= 100;
+  if (n === 15) s += 'טו';
+  else if (n === 16) s += 'טז';
+  else { s += tens[Math.floor(n / 10)]; s += ones[n % 10]; }
+  // גרשיים/גרש
+  if (s.length > 1) s = s.slice(0, -1) + '״' + s.slice(-1);
+  else s += '׳';
+  return s;
+}
+
+function hebParts(date) {
+  // ממיר לתאריך עברי באמצעות לוח השנה המובנה של הדפדפן
+  const fmt = new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' });
+  const parts = fmt.formatToParts(date);
+  const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
+  const dayNum = parseInt(get('day'), 10);
+  const yearNum = parseInt(get('year'), 10);
+  return {
+    day: gematria(dayNum),
+    dayNum: dayNum,
+    month: get('month'),
+    year: gematria(yearNum),
+    yearNum: yearNum
+  };
+}
+
+function screenCalendar() {
+  const base = new Date();
+  base.setDate(1);
+  base.setMonth(base.getMonth() + calOffset);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDay = first.getDay(); // 0=ראשון
+
+  const todayStr = todayISO();
+  const gregMonth = base.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+
+  // שם החודש/ים העברי/ים בטווח
+  const hStart = hebParts(new Date(year, month, 1));
+  const hEnd = hebParts(new Date(year, month, daysInMonth));
+  const hebTitle = hStart.month === hEnd.month
+    ? `${hStart.month} ${hStart.year}`
+    : `${hStart.month}–${hEnd.month} ${hEnd.year}`;
+
+  const cells = [];
+  for (let i = 0; i < startDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const dayNames = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('calendar')} לוח שנה עברי</h2>
+        <div class="screen-sub">היום: ${hebParts(new Date()).day} ${hebParts(new Date()).month} ${hebParts(new Date()).year}</div>
+      </div>
+    </div>
+
+    <div class="cal">
+      <div class="cal-nav">
+        <button id="cal-prev">${icon('back', 18)}</button>
+        <div class="cal-title">
+          <div class="cal-heb">${e(hebTitle)}</div>
+          <div class="cal-greg">${e(gregMonth)}</div>
+        </div>
+        <button id="cal-next" style="transform:scaleX(-1)">${icon('back', 18)}</button>
+      </div>
+
+      <div class="cal-grid cal-head">
+        ${dayNames.map((d) => `<div class="cal-dayname">${d}</div>`).join('')}
+      </div>
+
+      <div class="cal-grid">
+        ${cells.map((d) => {
+          if (!d) return '<div class="cal-cell empty"></div>';
+          const dateObj = new Date(year, month, d);
+          const iso = dateObj.toISOString().slice(0, 10);
+          const heb = hebParts(dateObj);
+          const isToday = iso === todayStr;
+          return `
+            <div class="cal-cell ${isToday ? 'today' : ''}">
+              <span class="cal-greg-num">${d}/${month + 1}</span>
+              <span class="cal-heb-num">${heb.day}</span>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function bindCalendar(root) {
+  root.querySelector('#cal-prev').onclick = () => { calOffset++; render(); };
+  root.querySelector('#cal-next').onclick = () => { calOffset--; render(); };
+}
+
+// ============================================================
+//  אותיות בספר תורה
+// ============================================================
+function screenTorah() {
+  const gifts = DB.all('birthGifts');
+  const pending = gifts.filter((g) => !g.letterOrdered);
+  const ordered = gifts.filter((g) => g.letterOrdered);
+
+  const rowFor = (g) => {
+    const m = DB.find('mothers', g.motherId);
+    if (!m) return '';
+    return `
+      <div class="row" data-torah="${g.id}">
+        <div class="avatar">${e(UI.initials(m.motherName))}</div>
+        <div class="row-main">
+          <div class="row-title">${e(m.childName || m.motherName)} ${e(m.lastName || '')}</div>
+          <div class="row-sub">${e(nbhdName(m.neighborhood))}${m.birthDate ? ` · ${fmtDate(m.birthDate)}` : ''}</div>
+        </div>
+        <span class="badge ${g.letterOrdered ? 'ok' : 'warn'}">${g.letterOrdered ? 'הוזמנה' : 'ממתינה'}</span>
+      </div>`;
+  };
+
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('scroll')} אותיות בספר תורה</h2>
+        <div class="screen-sub">${pending.length} ממתינות להזמנה</div>
+      </div>
+      <button class="btn btn-sm" id="torah-export" style="width:auto">${icon('download')} ייצוא לאקסל</button>
+    </div>
+
+    ${pending.length ? `<div class="section-title">${icon('clock')} ממתינות (${pending.length})</div>
+      ${pending.map(rowFor).join('')}` : ''}
+    ${ordered.length ? `<div class="section-title">${icon('check')} הוזמנו (${ordered.length})</div>
+      ${ordered.map(rowFor).join('')}` : ''}
+    ${!gifts.length ? UI.empty('scroll', 'אין רשומות', 'אותיות נפתחות אוטומטית עם הוספת יולדת') : ''}
+  `;
+}
+
+function bindTorah(root) {
+  const exp = root.querySelector('#torah-export');
+  if (exp) exp.onclick = () => exportTorahLetters();
+
+  root.querySelectorAll('[data-torah]').forEach((el) => {
+    el.onclick = () => {
+      const g = DB.find('birthGifts', el.dataset.torah);
+      const m = DB.find('mothers', g.motherId);
+      UI.confirm('אות בספר תורה',
+        g.letterOrdered ? `לסמן את האות של ${e(m.childName || m.motherName)} כלא הוזמנה?` : `לסמן שהאות של ${e(m.childName || m.motherName)} הוזמנה?`,
+        () => { DB.update('birthGifts', g.id, { letterOrdered: !g.letterOrdered }); render(); });
+    };
+  });
+}
+
+// ============================================================
+//  שכונות — יולדות מקובצות לפי אזור
+// ============================================================
+function screenNeighborhoods() {
+  const active = DB.all('mothers').filter((m) => m.status === 'active');
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('mappin')} שכונות</h2>
+        <div class="screen-sub">יולדות פעילות לפי אזור</div>
+      </div>
+    </div>
+
+    ${NEIGHBORHOODS.map((n) => {
+      const inN = active.filter((m) => m.neighborhood === n.id);
+      return `
+        <div class="section-title">
+          <span class="nbhd-dot" style="background:${n.color}"></span> ${e(n.name)} (${inN.length})
+        </div>
+        ${inN.length ? inN.map((m) => `
+          <div class="row" data-mother="${m.id}">
+            <div class="avatar">${e(UI.initials(m.motherName))}</div>
+            <div class="row-main">
+              <div class="row-title">${e(m.motherName)} ${e(m.lastName || '')}</div>
+              <div class="row-sub">${e(m.address || '')}</div>
+            </div>
+            ${m.phone ? `<a class="icon-btn wa" href="tel:${escapeAttr(m.phone)}">${icon('phone')}</a>` : ''}
+          </div>`).join('') : '<div class="empty-inline">אין יולדות באזור זה</div>'}`;
+    }).join('')}
+  `;
+}
+
+function bindNeighborhoods(root) {
+  root.querySelectorAll('[data-mother]').forEach((el) => {
+    el.onclick = () => go('mother-profile', el.dataset.mother);
+  });
+}
+
+// ============================================================
+//  הודעות מהמנהלת המשנית
+// ============================================================
+function screenMessages() {
+  const me = DB.me;
+  const notes = DB.all('notes').sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('message')} הודעות</h2>
+        <div class="screen-sub">הודעות בין המנהלות</div>
+      </div>
+      ${me.role !== 'admin' ? `<button class="btn btn-sm" id="msg-new" style="width:auto">${icon('plus')} הודעה</button>` : ''}
+    </div>
+
+    ${notes.length ? notes.map((n) => {
+      const from = DB.find('users', n.fromUserId);
+      return `
+        <div class="card">
+          <div class="row-title">${e(n.text)}</div>
+          <div class="row-sub" style="margin-top:6px">${e(from ? from.name : 'מנהלת')} · ${relativeDay(n.date)} ${n.read ? '· נקראה' : ''}</div>
+          ${!n.read && me.role === 'admin' ? `<button class="btn btn-ghost btn-sm" data-read="${n.id}" style="margin-top:10px">${icon('check')} סימון כנקראה</button>` : ''}
+        </div>`;
+    }).join('') : UI.empty('message', 'אין הודעות', '')}
+  `;
+}
+
+function bindMessages(root) {
+  root.querySelectorAll('[data-read]').forEach((el) => {
+    el.onclick = () => { DB.update('notes', el.dataset.read, { read: true }); render(); };
+  });
+  const nw = root.querySelector('#msg-new');
+  if (nw) nw.onclick = () => {
+    UI.modal('הודעה למנהלת הראשית', `
+      <div id="nf3">${UI.textarea('תוכן', 'text', '')}
+      <button class="btn" id="nf3-save">${icon('check')} שליחה</button></div>
+    `, (c) => {
+      c.querySelector('#nf3-save').onclick = () => {
+        const { text } = UI.readForm(c.querySelector('#nf3'));
+        if (!text) return UI.toast('חובה למלא תוכן');
+        DB.insert('notes', { fromUserId: DB.me.id, text, date: todayISO(), read: false });
+        UI.closeModal();
+        UI.toast('נשלח');
+        render();
+      };
+    });
+  };
+}
+
+// ============================================================
+//  תמונות (Supabase Storage)
+// ============================================================
+function screenImages() {
+  return `
+    <div class="screen-head">
+      <div>
+        <h2 class="screen-title">${icon('filetext')} תמונות</h2>
+        <div class="screen-sub">קבצים ותמונות של הארגון</div>
+      </div>
+      <button class="btn btn-sm" id="img-upload" style="width:auto">${icon('download')} העלאה</button>
+    </div>
+    <div class="card" id="img-list">
+      <div class="empty-inline" style="padding:30px 0">טוען...</div>
+    </div>
+  `;
+}
+
+function bindImages(root) {
+  loadImages(root);
+  const up = root.querySelector('#img-upload');
+  if (up) up.onclick = () => {
+    if (!window.__sb) return UI.toast('העלאת תמונות זמינה רק במצב מחובר');
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const f = input.files[0];
+      if (!f) return;
+      UI.toast('מעלה...');
+      const path = Date.now() + '-' + f.name.replace(/[^\w.\-]/g, '_');
+      const { error } = await window.__sb.storage.from('images').upload(path, f);
+      if (error) return UI.toast('שגיאה: ' + error.message);
+      UI.toast('הועלה');
+      loadImages(root);
+    };
+    input.click();
+  };
+}
+
+async function loadImages(root) {
+  const list = root.querySelector('#img-list');
+  if (!list) return;
+  if (!window.__sb) {
+    list.innerHTML = '<div class="empty-inline" style="padding:20px 0">תמונות זמינות רק במצב מחובר לענן</div>';
+    return;
+  }
+  const res = await window.__sb.storage.from('images').list('', { limit: 100 });
+  if (res.error) {
+    list.innerHTML = '<div class="empty-inline" style="padding:20px 0">' + e(res.error.message) + '</div>';
+    return;
+  }
+  const files = (res.data || []).filter((f) => f.name && !f.name.startsWith('.'));
+  if (!files.length) {
+    list.innerHTML = '<div class="empty-inline" style="padding:20px 0">אין תמונות עדיין</div>';
+    return;
+  }
+  list.innerHTML = '<div class="img-grid">' + files.map((f) => {
+    const url = window.__sb.storage.from('images').getPublicUrl(f.name).data.publicUrl;
+    return '<a href="' + url + '" target="_blank" class="img-thumb"><img src="' + url + '" loading="lazy"></a>';
+  }).join('') + '</div>';
+}

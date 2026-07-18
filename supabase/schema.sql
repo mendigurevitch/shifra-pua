@@ -58,8 +58,14 @@ create table if not exists inventory (
   name text not null,
   qty int default 0,
   min_qty int default 0,
+  category text,
+  unit text,
   created_at timestamptz default now()
 );
+
+-- הוספת עמודות למסד קיים (idempotent)
+alter table inventory add column if not exists category text;
+alter table inventory add column if not exists unit text;
 
 create table if not exists meals (
   id text primary key,

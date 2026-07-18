@@ -76,11 +76,55 @@ function emptyState() {
   return s;
 }
 
+// קטגוריות מלאי (טאבים במסך המלאי)
+const INV_CATEGORIES = [
+  { id: 'oneTime', name: 'חד-פעמי' },
+  { id: 'afterBirth', name: 'מתנה אחרי לידה' },
+  { id: 'pregnancy', name: 'ערכת הריוניות' },
+  { id: 'yearGift', name: 'מתנת גיל שנה' },
+  { id: 'other', name: 'אחר' }
+];
+
+// המלאי המדויק מהצילומים של המערכת הקיימת
 function defaultInventory() {
-  return [
-    'קערת סלט גדולה', 'קערת סלט קטנה', 'תבנית אפייה קטנה', 'בקבוקים',
-    'כוסות שייק', 'רוטב קטן', 'רוטב גדול', 'ניילון ללחם', 'שקית אריזה'
-  ].map((name) => ({ id: uid(), name, qty: 50, minQty: 15 }));
+  const items = [
+    // חד-פעמי
+    ['oneTime', 'נייר קטן ללחם', 150, 20, 'יח'],
+    ['oneTime', 'כוסות שייק', 400, 20, 'יח'],
+    ['oneTime', 'בקבוקים', 150, 10, 'יח'],
+    ['oneTime', 'קשים', 200, 20, 'יח'],
+    ['oneTime', 'קערת סלט קטנה', 100, 10, 'יח'],
+    ['oneTime', 'קערת סלט גדולה', 70, 10, 'יח'],
+    ['oneTime', 'שקית לאריזה', 250, 20, 'יח'],
+    ['oneTime', 'רוטב קטן', 0, 20, 'יח'],
+    ['oneTime', 'רוטב גדול', 1000, 10, 'יח'],
+    ['oneTime', 'תבנית קטנה לאפייה (שחור-זהב)', 450, 10, 'יח'],
+    // מתנה אחרי לידה
+    ['afterBirth', 'ערכה של שפרה ופועה מל״ש', 20, 3, 'יח'],
+    ['afterBirth', 'הסבר שמן אתרי', 0, 5, 'יח'],
+    ['afterBirth', 'הדפסות צבעוניות', 0, 5, 'יח'],
+    ['afterBirth', 'שוקלד', 0, 5, 'יח'],
+    ['afterBirth', 'שוברים', 0, 5, 'יח'],
+    ['afterBirth', 'פתק הסבר שפרה ופועה', 0, 5, 'יח'],
+    ['afterBirth', 'שמן אתרי לתינוק', 0, 5, 'יח'],
+    // ערכת הריוניות
+    ['pregnancy', 'סוכריות מציצה', 0, 5, 'שקיות'],
+    ['pregnancy', 'דוגמיות סימני מתיחה', 0, 5, 'יח'],
+    ['pregnancy', 'בקבוק מים', 0, 5, 'יח'],
+    ['pregnancy', 'שמן לידה של יהודית', 0, 3, 'יח'],
+    ['pregnancy', 'שובר השאלת TENS', 0, 3, 'יח'],
+    ['pregnancy', 'שובר הפרשת חלה', 0, 5, 'יח'],
+    ['pregnancy', 'תהילים + שיר המעלות', 0, 5, 'יח'],
+    // מתנת גיל שנה
+    ['yearGift', 'משחק לילד', 0, 5, 'יח'],
+    ['yearGift', 'מגנט', 0, 5, 'יח'],
+    ['yearGift', 'גרבר ללא סוכר', 0, 5, 'יח'],
+    ['yearGift', 'תהילים אישי', 0, 5, 'יח'],
+    ['yearGift', 'ספרון מתנת גיל שנה', 25, 3, 'יח']
+  ];
+  return items.map(([category, name, qty, minQty, unit], i) => ({
+    id: 'inv-' + (i + 1), category, name, qty, minQty, unit
+  }));
 }
 
 function seedState() {
@@ -402,6 +446,7 @@ async function loadSupabaseClient() {
       autoRefreshToken: true
     }
   });
+  window.__sb = sb; // חשיפה למסך התמונות (Storage)
 }
 
 async function getSession() {
