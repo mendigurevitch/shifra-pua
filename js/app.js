@@ -650,8 +650,10 @@ function renderSetPassword(errMsg) {
 //  אתחול
 // ------------------------------------------------------------
 async function boot() {
-  // לוכדים את ה-token מקישור ההזמנה לפני ש-supabase-js צורך אותו
-  const arrivedViaLink = /type=(invite|recovery|signup)/.test(location.hash);
+  // כל קישור אימות במייל (הזמנה / איפוס / magic link) מגיע עם access_token
+  // ב-hash. משתמשת חוזרת עם סשן שמור מגיעה בלי hash — לכן זה מזהה נכון
+  // "כניסה ראשונה דרך קישור" ומפנה למסך בחירת סיסמה.
+  const arrivedViaLink = location.hash.includes('access_token');
 
   try {
     await DB.init();
