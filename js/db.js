@@ -378,7 +378,9 @@ function recordToRow(rec) {
   const out = {};
   Object.entries(rec).forEach(([k, v]) => {
     if (v === undefined) return;
-    out[toSnake(k)] = v;
+    // מחרוזת ריקה נדחית ע"י Postgres בעמודות תאריך/שעה/מספר.
+    // ריק = "אין ערך" = null, וכך הכתיבה מצליחה.
+    out[toSnake(k)] = v === '' ? null : v;
   });
   return out;
 }

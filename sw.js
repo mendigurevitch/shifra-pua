@@ -1,5 +1,5 @@
 // Bump CACHE_VERSION on every deploy so all phones pick up the new build.
-const CACHE_VERSION = 'shifra-v5';
+const CACHE_VERSION = 'shifra-v6';
 
 const ASSETS = [
   './',
