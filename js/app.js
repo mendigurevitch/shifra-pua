@@ -593,9 +593,66 @@ function renderLogin(errMsg) {
 }
 
 // ------------------------------------------------------------
+//  מסך בחירת סיסמה (בכניסה ראשונה דרך קישור הזמנה)
+// ------------------------------------------------------------
+function renderSetPassword(errMsg) {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login">
+      <div class="login-card">
+        <div class="login-logo">${icon('heart', 34)}</div>
+        <div class="login-title">ברוכה הבאה!</div>
+        <div class="login-sub">כדי לסיים, בחרי סיסמה לכניסות הבאות</div>
+
+        <div id="sp">
+          <div class="field">
+            <label>סיסמה חדשה</label>
+            <input type="password" name="password" autocomplete="new-password" dir="ltr">
+          </div>
+          <div class="field">
+            <label>אימות סיסמה</label>
+            <input type="password" name="confirm" autocomplete="new-password" dir="ltr">
+          </div>
+          ${errMsg ? `<div class="alert" style="margin-bottom:12px">
+            ${icon('alert')}<div class="alert-text">${e(errMsg)}</div>
+          </div>` : ''}
+          <button class="btn" id="sp-go">${icon('check')} שמירה וכניסה</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const btn = app.querySelector('#sp-go');
+  const submit = async () => {
+    const { password, confirm } = UI.readForm(app.querySelector('#sp'));
+    if (!password || password.length < 6) return renderSetPassword('סיסמה חייבת להיות לפחות 6 תווים');
+    if (password !== confirm) return renderSetPassword('הסיסמאות אינן תואמות');
+
+    btn.disabled = true;
+    btn.innerHTML = 'שומרת...';
+    try {
+      await Auth.setPassword(password);
+      if (!DB.me) return renderLogin('הסיסמה נשמרה. כעת אפשר להתחבר.');
+      route = { name: 'dashboard', param: null };
+      render();
+    } catch (err) {
+      renderSetPassword(err.message);
+    }
+  };
+
+  btn.onclick = submit;
+  app.querySelector('[name="confirm"]').onkeydown = (ev) => {
+    if (ev.key === 'Enter') submit();
+  };
+}
+
+// ------------------------------------------------------------
 //  אתחול
 // ------------------------------------------------------------
 async function boot() {
+  // לוכדים את ה-token מקישור ההזמנה לפני ש-supabase-js צורך אותו
+  const arrivedViaLink = /type=(invite|recovery|signup)/.test(location.hash);
+
   try {
     await DB.init();
   } catch (err) {
@@ -605,6 +662,10 @@ async function boot() {
   // במצב מחובר-לענן חייבים התחברות אמיתית לפני שרואים משהו
   if (SUPABASE_READY) {
     const session = await Auth.session();
+
+    // הגעה דרך קישור הזמנה → קביעת סיסמה ראשונית
+    if (session && arrivedViaLink) return renderSetPassword();
+
     if (!session) return renderLogin();
     if (!DB.me) return renderLogin('המשתמשת אינה מוגדרת במערכת. פני למנהלת.');
   }

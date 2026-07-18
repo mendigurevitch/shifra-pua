@@ -391,7 +391,15 @@ async function loadSupabaseClient() {
     s.onerror = () => reject(new Error('לא ניתן לטעון את ספריית Supabase'));
     document.head.appendChild(s);
   });
-  sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
+    auth: {
+      // detectSessionInUrl קורא את ה-token מקישור ההזמנה (הגעה עם #access_token)
+      detectSessionInUrl: true,
+      flowType: 'implicit',
+      persistSession: true,
+      autoRefreshToken: true
+    }
+  });
 }
 
 async function getSession() {
@@ -459,6 +467,15 @@ const Auth = {
   async signIn(email, password) {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw new Error(authErrorHe(error.message));
+    await pullAll();
+  },
+
+  // קביעת סיסמה בפעם הראשונה (אחרי לחיצה על קישור הזמנה)
+  async setPassword(password) {
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) throw new Error(authErrorHe(error.message));
+    // מנקים את ה-token מה-URL כדי שרענון לא יחזיר למסך הסיסמה
+    history.replaceState(null, '', location.pathname + location.search);
     await pullAll();
   },
 
