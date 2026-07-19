@@ -13,6 +13,7 @@ function screenDashboard() {
   const yearDue = DB.yearGiftDueSoon();
   const delivery = DB.weeklyList('meal');
   const shabbat = DB.weeklyList('shabbat');
+  const birthdays = DB.upcomingBirthdays();
 
   const quickActions = [
     { id: 'tasks', label: 'משימות', icon: 'filetext' },
@@ -73,6 +74,19 @@ function screenDashboard() {
               <span class="badge ${g.contactId ? 'warn' : 'danger'}">${g.contactId ? 'ממתין' : 'ללא איש קשר'}</span>
             </div>`;
         }).join('')}
+      </div>` : ''}
+
+    ${birthdays.length ? `
+      <div class="task-card-pink">
+        <div class="task-card-title pink">${icon('cake', 16)} ימי הולדת למתנדבות</div>
+        ${birthdays.slice(0, 4).map(({ v, days }) => `
+          <div class="task-row">
+            <div>
+              <div class="row-title">${e(v.name)}</div>
+              <div class="row-sub">${days === 0 ? 'היום! 🎉' : days === 1 ? 'מחר' : `בעוד ${days} ימים`}</div>
+            </div>
+            <button class="icon-btn wa" data-bday="${v.id}">${icon('whatsapp', 15)}</button>
+          </div>`).join('')}
       </div>` : ''}
 
     ${weeklyBox('שינוע שבועי', 'truck', delivery, 'meal')}
@@ -590,7 +604,7 @@ function confirmBulkMothers(recs) {
       recs.forEach((r) => {
         if (r.phone && DB.phoneExists(r.phone)) { skipped++; return; }
         DB.addMother({
-          motherName: r.motherName || '(ללא שם — נא לעדכן)',
+          motherName: r.motherName || '(ללא שם — נא לעדכן)', lastName: r.lastName || '',
           childName: r.childName || '', childGender: r.childGender || '',
           phone: r.phone || '', neighborhood: r.neighborhood || '',
           address: r.address || '', entryCode: r.entryCode || ''
@@ -654,7 +668,12 @@ function parseMothersBulk(text) {
     let childName = '', childGender = '';
     if (babyM) { childGender = /תינוקת/.test(babyM[1]) ? 'girl' : 'boy'; childName = (babyM[2] || '').trim().split(/\s+/).slice(0, 3).join(' '); }
 
-    out.push({ motherName: name, phone: p.phone, neighborhood: nb, address, entryCode: codeM ? codeM[1] : '', childName, childGender });
+    // פיצול שם פרטי / שם משפחה: מילה ראשונה = פרטי, השאר = משפחה
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ');
+
+    out.push({ motherName: firstName, lastName, phone: p.phone, neighborhood: nb, address, entryCode: codeM ? codeM[1] : '', childName, childGender });
     seen.add(p.phone);
   }
   return out;
@@ -725,7 +744,7 @@ function importMothersExcel() {
             if (r.phone && DB.phoneExists(r.phone)) { skipped++; return; }
             if (!r.motherName) noName++;
             const mother = DB.addMother({
-              motherName: r.motherName || '(ללא שם — נא לעדכן)',
+              motherName: r.motherName || '(ללא שם — נא לעדכן)', lastName: r.lastName || '',
               childName: r.childName || '', childGender: r.childGender || '',
               phone: r.phone || '', neighborhood: r.neighborhood || '',
               address: r.address || '', entryCode: r.entryCode || ''

@@ -12,9 +12,14 @@ create table if not exists users (
   phone text,
   role text not null check (role in ('admin', 'manager', 'volunteer')),
   volunteer_id text,
+  allowed_screens jsonb,
+  read_only boolean default false,
   active boolean default true,
   created_at timestamptz default now()
 );
+
+alter table users add column if not exists allowed_screens jsonb;
+alter table users add column if not exists read_only boolean default false;
 
 create table if not exists mothers (
   id text primary key,

@@ -78,4 +78,22 @@ const VOLUNTEER_TYPES = {
   other: 'אחר'
 };
 
+// מסכים שאפשר להעניק/לחסום למשתמשת (הרשאות מותאמות אישית)
+const PERM_SCREENS = [
+  { id: 'mothers', label: 'יולדות' },
+  { id: 'meals', label: 'ארוחות ושינוע' },
+  { id: 'kits', label: 'ערכות שבת' },
+  { id: 'gifts', label: 'מתנות' },
+  { id: 'torah', label: 'אותיות בספר תורה' },
+  { id: 'events', label: 'בוקר ליולדות' },
+  { id: 'calendar', label: 'לוח שנה' },
+  { id: 'neighborhoods', label: 'שכונות' },
+  { id: 'contacts', label: 'אנשי קשר' },
+  { id: 'inventory', label: 'מלאי' },
+  { id: 'volunteers', label: 'מתנדבות' },
+  { id: 'images', label: 'תמונות' },
+  { id: 'messages', label: 'הודעות' },
+  { id: 'reports', label: 'דוחות' }
+];
+
 const SUPABASE_READY = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);

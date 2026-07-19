@@ -1150,3 +1150,33 @@ a.mc-line { color: var(--text); }
 .cal-cell.has-event { border-color: var(--primary-light); }
 .cal-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--primary); }
 .cal-cell { position: relative; }
+
+/* ===== PINK TASK CARD (volunteer birthdays) ===== */
+.task-card-pink {
+  background: #FDF2F8;
+  border: 1.5px solid #FBCFE0;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.task-card-title.pink { color: var(--primary-dark); }
+.task-card-title.pink svg { color: var(--primary); }
+
+/* ===== PERMISSIONS CHECKLIST (user form) ===== */
+.perm-list { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
+.perm-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px; background: var(--bg);
+}
+.perm-row label { font-size: 13.5px; font-weight: 600; flex: 1; margin: 0; }
+.perm-row input[type="checkbox"] { width: 19px; height: 19px; accent-color: var(--primary); }
+
+/* ===== READ-ONLY MODE (hide edit affordances) ===== */
+#app.readonly .fab,
+#app.readonly [data-edit],
+#app.readonly [data-invdel],
+#app.readonly [data-invplus],
+#app.readonly [data-invminus],
+#app.readonly [id^="add-"],
+#app.readonly .btn-danger,
+#app.readonly [data-stage-act] { display: none !important; }

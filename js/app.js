@@ -48,6 +48,18 @@ function go(name, param) {
   document.querySelector('.screen').scrollTop = 0;
 }
 
+// מסכים שתמיד גלויים (בלי קשר להרשאות מותאמות)
+const ALWAYS_VIEW = ['dashboard', 'more', 'settings', 'reminders', 'messages', 'order', 'my-tasks', 'mother-profile'];
+
+// האם המשתמשת רשאית לראות מסך מסוים
+function canView(name) {
+  const me = DB.me;
+  if (!me || me.role === 'admin') return true;
+  if (ALWAYS_VIEW.includes(name)) return true;
+  if (!Array.isArray(me.allowedScreens)) return true; // null = הכל מותר
+  return me.allowedScreens.includes(name);
+}
+
 function render() {
   const app = document.getElementById('app');
   const me = DB.me;
@@ -66,6 +78,14 @@ function render() {
   if (isVolunteer && !['my-tasks', 'order'].includes(route.name)) {
     route = { name: 'my-tasks', param: null };
   }
+
+  // הרשאות מותאמות אישית: מסך חסום → חזרה לדשבורד
+  if (!canView(route.name)) {
+    route = { name: 'dashboard', param: null };
+  }
+
+  // צפייה בלבד — מסתיר כפתורי פעולה דרך CSS
+  app.classList.toggle('readonly', me.role !== 'admin' && !!me.readOnly);
 
   const screen = SCREENS[route.name] || SCREENS.dashboard;
 
@@ -124,7 +144,7 @@ function screenMore() {
     { id: 'settings', label: 'הגדרות והרשאות', icon: 'settings', sub: 'משתמשות ותצורה' }
   ];
 
-  return items.map((i) => `
+  return items.filter((i) => canView(i.id)).map((i) => `
     <div class="row" data-more="${i.id}">
       <div class="avatar">${icon(i.icon)}</div>
       <div class="row-main">
@@ -491,6 +511,9 @@ function userForm(id) {
   const u = id ? DB.find('users', id) : {};
   const vols = DB.all('volunteers');
 
+  // allowedScreens ריק/לא-מוגדר = הכל מותר. אחרת רק מה שמסומן.
+  const allowed = Array.isArray(u.allowedScreens) ? u.allowedScreens : null;
+
   UI.modal(id ? 'עריכת משתמשת' : 'משתמשת חדשה', `
     <div id="uf">
       ${UI.field('שם *', 'name', u.name)}
@@ -501,7 +524,24 @@ function userForm(id) {
       <div class="card-sub" style="margin:-6px 0 14px;line-height:1.5">
         נדרש רק למתנדבות — כך המערכת יודעת אילו שיבוצים להציג לה
       </div>
-      <button class="btn" id="uf-save">${icon('check')} שמירה</button>
+
+      <div class="section-title" style="margin:6px 0 8px">${icon('settings')} הרשאות — מה תוכל לראות</div>
+      <div class="card-sub" style="margin-bottom:8px;line-height:1.5">
+        סמני מה המשתמשת רואה. ריק = רואה הכל. (מנהלת ראשית תמיד רואה הכל)
+      </div>
+      <div class="perm-list">
+        ${PERM_SCREENS.map((s) => `
+          <div class="perm-row">
+            <input type="checkbox" data-perm="${s.id}" id="perm-${s.id}" ${!allowed || allowed.includes(s.id) ? 'checked' : ''}>
+            <label for="perm-${s.id}">${e(s.label)}</label>
+          </div>`).join('')}
+      </div>
+      <div class="check-row" style="margin-top:8px">
+        <input type="checkbox" name="readOnly" id="uf-ro" ${u.readOnly ? 'checked' : ''}>
+        <label for="uf-ro">צפייה בלבד (לא יכולה לערוך/להוסיף/למחוק)</label>
+      </div>
+
+      <button class="btn" id="uf-save" style="margin-top:8px">${icon('check')} שמירה</button>
       ${id && id !== DB.me.id ? `<button class="btn btn-ghost" id="uf-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקה</button>` : ''}
     </div>
   `, (c) => {
@@ -509,6 +549,10 @@ function userForm(id) {
       const data = UI.readForm(c.querySelector('#uf'));
       if (!data.name || !data.role) return UI.toast('חובה למלא שם ותפקיד');
       data.volunteerId = data.volunteerId || null;
+      // איסוף המסכים המסומנים; אם הכל מסומן — שומרים null (הכל מותר)
+      const checked = [...c.querySelectorAll('[data-perm]:checked')].map((x) => x.dataset.perm);
+      data.allowedScreens = checked.length === PERM_SCREENS.length ? null : checked;
+      data.readOnly = !!data.readOnly;
       if (id) DB.update('users', id, data);
       else DB.insert('users', Object.assign({ active: true }, data));
       UI.closeModal();
