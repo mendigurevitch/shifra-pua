@@ -96,4 +96,18 @@ const PERM_SCREENS = [
   { id: 'reports', label: 'דוחות' }
 ];
 
+// פרטים קבועים לייצוא אותיות בספר תורה (כתובת המשלוח + פרטי קשר)
+const TORAH_EXPORT = {
+  shipName: 'יהודה ליפש',
+  street: 'יחיאל דרונר',
+  house: '6',
+  apartment: '2',
+  city: 'תל אביב',
+  region: 'ישראל',
+  country: 'ישראל',
+  zip: '6949758',
+  email: 'yul770@gmail.com',
+  phone: '0528456770'
+};
+
 const SUPABASE_READY = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);

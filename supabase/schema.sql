@@ -121,6 +121,10 @@ create table if not exists "yearGifts" (
 create table if not exists events (
   id text primary key,
   date date not null,
+  title text,
+  time text,
+  kind text,
+  notes text,
   location text,
   chairs int,
   refreshments int,
@@ -129,6 +133,11 @@ create table if not exists events (
   attendance jsonb default '[]',
   created_at timestamptz default now()
 );
+
+alter table events add column if not exists title text;
+alter table events add column if not exists time text;
+alter table events add column if not exists kind text;
+alter table events add column if not exists notes text;
 
 create table if not exists timeline (
   id text primary key,

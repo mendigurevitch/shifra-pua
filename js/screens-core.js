@@ -297,6 +297,12 @@ function screenMothers() {
     </div>
 
     <div class="chips">
+      <button class="chip ${mothersFilter.status === 'active' ? 'active' : ''}" data-status="active">פעילות</button>
+      <button class="chip ${mothersFilter.status === 'archived' ? 'active' : ''}" data-status="archived">ארכיון ${icon('package', 12)}</button>
+      <button class="chip ${mothersFilter.status === '' ? 'active' : ''}" data-status="">הכל</button>
+    </div>
+
+    <div class="chips">
       <button class="chip ${mothersFilter.stage === '' || !mothersFilter.stage ? 'active' : ''}" data-stage="">כל היולדות</button>
       <button class="chip ${mothersFilter.stage === 'meals' ? 'active' : ''}" data-stage="meals">ארוחות</button>
       <button class="chip ${mothersFilter.stage === 'shabbat' ? 'active' : ''}" data-stage="shabbat">שבת</button>
@@ -370,34 +376,32 @@ function wazeLink(address) {
   return `https://waze.com/ul?q=${encodeURIComponent(address || '')}&navigate=yes`;
 }
 
-// לחיצה על אייקון שלב בכרטיס היולדת — כל אייקון והפעולה שלו
+// סדר השלבים (חייב להתאים ל-stageIcons)
+const STAGE_ORDER = ['meals', 'shabbat', 'torah', 'birthGift', 'yearGift'];
+
+// לחיצה על אייקון שלב: מסמן שהשלב הזה הושלם ומקדם לשלב הבא.
+// לחיצה על שלב מוקדם יותר = חזרה אחורה (מבטלת את המאוחרים).
 function stageAction(motherId, stage) {
   const m = DB.find('mothers', motherId);
   if (!m) return;
-  if (stage === 'meals') {
-    DB.addToWeekly(motherId, 'meal');
-    DB.markMealsDone(motherId);
-    UI.toast(`${m.motherName} נוספה לשינוע השבועי`);
-  } else if (stage === 'shabbat') {
-    DB.addToWeekly(motherId, 'shabbat');
-    DB.markKitDelivered(motherId);
-    UI.toast(`${m.motherName} נוספה לרשימת ערכות שבת`);
-  } else if (stage === 'torah') {
-    DB.markLetterOrdered(motherId);
-    exportOneTorah(m);
-  } else if (stage === 'birthGift') {
-    UI.confirm('מתנת לידה', `לסמן שמתנת הלידה של ${e(m.motherName)} נמסרה ולהעביר לארכיון?`, () => {
-      DB.markBirthGiftDone(motherId);
-      UI.toast('הועברה לארכיון');
-      render();
-    });
+  const idx = STAGE_ORDER.indexOf(stage);
+
+  const apply = () => {
+    DB.setStageProgress(motherId, idx);
+    // הכנסה לרשימות השבועיות בהתאם לשלב
+    if (stage === 'meals') { DB.addToWeekly(motherId, 'meal'); UI.toast(`${m.motherName} נוספה לשינוע השבועי`); }
+    else if (stage === 'shabbat') { DB.addToWeekly(motherId, 'shabbat'); UI.toast(`${m.motherName} נוספה לערכות שבת`); }
+    else if (stage === 'torah') { UI.toast('נוספה לרשימת האותיות'); }
+    else if (stage === 'yearGift') { UI.toast('מתנת גיל שנה סומנה כנאספה'); }
+    render();
+  };
+
+  // מתנת לידה = מעבר לארכיון → אישור
+  if (stage === 'birthGift') {
+    UI.confirm('מתנת לידה', `לסמן שמתנת הלידה של ${e(m.motherName)} נמסרה ולהעביר לארכיון? (אפשר להחזיר בלחיצה על שלב מוקדם יותר)`, apply);
     return;
-  } else if (stage === 'yearGift') {
-    const yg = DB.all('yearGifts').find((g) => g.motherId === motherId);
-    if (yg) DB.update('yearGifts', yg.id, { status: 'done', collectedAt: todayISO() });
-    UI.toast('מתנת גיל שנה סומנה כנאספה');
   }
-  render();
+  apply();
 }
 
 // ייצוא פרטי אות בספר תורה של יולדת אחת (CSV עם BOM)
@@ -420,15 +424,19 @@ function downloadCSV(filename, csv) {
 
 function motherCard(m) {
   const color = nbhdColor(m.neighborhood);
+  // הכרטיס נצבע בצבע השכונה: רקע מרוכך + פס צבעוני + מסגרת
+  const tinted = m.neighborhood
+    ? `background:linear-gradient(0deg, ${color}0D, ${color}0D), var(--card);border:1.5px solid ${color}59;border-inline-start:5px solid ${color}`
+    : '';
   return `
-    <div class="mother-card" style="border-inline-start:4px solid ${color}">
+    <div class="mother-card" style="${tinted}">
       <div class="mc-top">
         <div class="mc-name-row">
           ${babyIcon(m.childGender)}
           <span class="mc-name">${e(m.motherName)} ${e(m.lastName || '')}</span>
           <button class="mc-clock" data-profile="${m.id}">${icon('clock', 15)}</button>
         </div>
-        ${m.neighborhood ? `<span class="mc-nbhd" style="background:${color}1F;color:${color}">${e(nbhdName(m.neighborhood))}</span>` : ''}
+        ${m.neighborhood ? `<span class="mc-nbhd" style="background:${color};color:#fff">${e(nbhdName(m.neighborhood))}</span>` : ''}
       </div>
 
       <div class="mc-info">
@@ -511,7 +519,10 @@ function motherForm(id, prefill) {
       </div>
       <div class="field-row">
         ${UI.field('שם הילד/ה', 'childName', m.childName)}
-        ${UI.field('תאריך לידה', 'birthDate', m.birthDate, 'date')}
+        <div class="field">
+          <label>תאריך לידה (יום/חודש/שנה)</label>
+          <input type="text" name="birthDate" inputmode="numeric" placeholder="למשל 15/03/2026" value="${escapeAttr(freeDateFromISO(m.birthDate))}">
+        </div>
       </div>
       ${UI.field('טלפון', 'phone', m.phone, 'tel')}
       ${UI.select('שכונה', 'neighborhood', m.neighborhood, NEIGHBORHOODS.map((n) => ({ value: n.id, label: n.name })))}
@@ -521,9 +532,11 @@ function motherForm(id, prefill) {
       ${UI.textarea('הערות', 'notes', m.notes)}
       ${id ? UI.select('סטטוס', 'status', m.status, [
         { value: 'active', label: 'פעילה' },
-        { value: 'done', label: 'סיימה מסלול' }
+        { value: 'done', label: 'סיימה מסלול' },
+        { value: 'archived', label: 'בארכיון' }
       ]) : ''}
       <button class="btn" id="mf-save">${icon('check')} שמירה</button>
+      ${id ? `<button class="btn btn-ghost" id="mf-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקת היולדת</button>` : ''}
     </div>
   `, (c) => {
     // בורר מין: לחיצה מסמנת ומעדכנת את השדה הנסתר
@@ -538,6 +551,8 @@ function motherForm(id, prefill) {
     c.querySelector('#mf-save').onclick = () => {
       const data = UI.readForm(c.querySelector('#mf'));
       if (!data.motherName) return UI.toast('חובה למלא שם אמא');
+      // המרת התאריך החופשי (יום/חודש/שנה) ל-ISO
+      data.birthDate = freeDateToISO(data.birthDate);
 
       if (id) {
         DB.update('mothers', id, data);
@@ -549,7 +564,41 @@ function motherForm(id, prefill) {
       UI.closeModal();
       render();
     };
+
+    const del = c.querySelector('#mf-del');
+    if (del) del.onclick = () => {
+      UI.closeModal();
+      UI.confirm('מחיקת יולדת', `למחוק לצמיתות את ${e(m.motherName)} ${e(m.lastName || '')} וכל הנתונים הקשורים?`, () => {
+        ['meals', 'kits', 'birthGifts', 'yearGifts', 'timeline', 'weekly'].forEach((col) => {
+          DB.all(col).filter((x) => x.motherId === id).forEach((x) => DB.remove(col, x.id));
+        });
+        DB.remove('mothers', id);
+        UI.toast('היולדת נמחקה');
+        if (route.name === 'mother-profile') go('mothers'); else render();
+      });
+    };
   });
+}
+
+// המרת תאריך חופשי dd/mm/yyyy ל-ISO; מקבל גם ISO
+function freeDateToISO(s) {
+  if (!s) return '';
+  s = String(s).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // כבר ISO
+  const m = s.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})$/);
+  if (!m) return '';
+  let [, d, mo, y] = m;
+  if (y.length === 2) y = '20' + y;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+// המרה הפוכה ל-תצוגה dd/mm/yyyy
+function freeDateFromISO(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 // ------------------------------------------------------------

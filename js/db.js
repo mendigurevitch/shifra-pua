@@ -285,6 +285,40 @@ const DB = {
     DB.markKitDelivered(motherId);
   },
 
+  // קובע את מצב ההתקדמות: שלבים 0..doneUpto הושלמו, השאר לא.
+  // מאפשר גם קידום וגם חזרה אחורה (לחיצה על שלב מוקדם מבטלת את המאוחרים).
+  // סדר: 0=ארוחות 1=שבת 2=אות 3=מתנה 4=גיל שנה
+  setStageProgress(motherId, doneUpto) {
+    // ארוחות
+    if (doneUpto >= 0) DB.markMealsDone(motherId);
+
+    // ערכת שבת
+    const kit = DB.all('kits').find((k) => k.motherId === motherId);
+    if (doneUpto >= 1) DB.markKitDelivered(motherId);
+    else if (kit) DB.update('kits', kit.id, { deliveredAt: null });
+
+    // אות בספר תורה
+    const bg = DB.all('birthGifts').find((g) => g.motherId === motherId);
+    if (bg) DB.update('birthGifts', bg.id, { letterOrdered: doneUpto >= 2 });
+
+    // מתנת לידה → ארכיון
+    if (doneUpto >= 3) {
+      if (bg) DB.update('birthGifts', bg.id, { status: 'done', deliveredAt: bg.deliveredAt || todayISO() });
+      DB.update('mothers', motherId, { status: 'archived' });
+    } else {
+      if (bg && bg.status === 'done') DB.update('birthGifts', bg.id, { status: 'pending', deliveredAt: null });
+      const m = DB.find('mothers', motherId);
+      if (m && m.status === 'archived') DB.update('mothers', motherId, { status: 'active' });
+    }
+
+    // מתנת גיל שנה
+    const yg = DB.all('yearGifts').find((g) => g.motherId === motherId);
+    if (yg) {
+      if (doneUpto >= 4) DB.update('yearGifts', yg.id, { status: 'done', collectedAt: yg.collectedAt || todayISO() });
+      else DB.update('yearGifts', yg.id, { status: 'pending', collectedAt: null });
+    }
+  },
+
   // האם כבר קיים טלפון כזה (למניעת כפילויות בייבוא)
   phoneExists(phone) {
     const p = String(phone || '').replace(/\D/g, '');

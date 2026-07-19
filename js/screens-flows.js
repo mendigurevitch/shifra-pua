@@ -530,24 +530,36 @@ function yearGiftForm(id) {
 }
 
 // ייצוא רשימת אותיות בספר תורה לאקסל (CSV עם BOM כדי שעברית תיפתח נכון)
+// שורת אקסל לאות בספר תורה — לפי הפורמט הקבוע של הארגון
+function torahRow(m) {
+  const T = TORAH_EXPORT;
+  const gender = m.childGender === 'girl' ? 'ילדה' : 'ילד';
+  // סדר עמודות: שם משפחה, שם פרטי מלא (הילד), גיל, שם האם, ילד/ילדה, שם למשלוח,
+  // רחוב, מספר בית, מספר דירה, עיר, מדינה/מחוז, ארץ, מיקוד, אימייל, טלפון
+  return [
+    m.lastName || '', m.childName || '', '', m.motherName || '', gender,
+    T.shipName, T.street, T.house, T.apartment, T.city, T.region, T.country, T.zip, T.email, T.phone
+  ];
+}
+
+const TORAH_HEADER = [
+  'שם משפחה', 'שם פרטי מלא (יהודי)', 'גיל', 'שם האם (יהודי)', 'ילד/ילדה',
+  'שם מלא למשלוח', 'רחוב', 'מספר בית', 'מספר דירה', 'עיר', 'מדינה / מחוז', 'ארץ', 'מיקוד', 'אימייל', 'טלפון'
+];
+
+// ייצוא כל האותיות שברשימה (letterOrdered=true) לאקסל בפורמט הקבוע
 function exportTorahLetters() {
   const rows = DB.all('birthGifts')
-    .filter((g) => !g.letterOrdered)
-    .map((g) => {
-      const m = DB.find('mothers', g.motherId);
-      if (!m) return null;
-      return [m.childName || '', m.motherName || '', m.lastName || '', m.birthDate || '', nbhdName(m.neighborhood), m.phone || ''];
-    })
+    .filter((g) => g.letterOrdered && g.status !== 'done')
+    .map((g) => { const m = DB.find('mothers', g.motherId); return m ? torahRow(m) : null; })
     .filter(Boolean);
 
-  if (!rows.length) return UI.toast('אין אותיות ממתינות להזמנה');
+  if (!rows.length) return UI.toast('אין אותיות ברשימה לייצוא');
 
-  const header = ['שם הילד/ה', 'שם האמא', 'שם משפחה', 'תאריך לידה', 'שכונה', 'טלפון'];
-  const csv = [header, ...rows]
+  const csv = [TORAH_HEADER, ...rows]
     .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\r\n');
 
-  // BOM חיוני — בלעדיו אקסל פותח עברית כג'יבריש
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -962,22 +974,67 @@ function bindCalendar(root) {
   });
 }
 
-// לחיצה על תאריך בלוח — הצגת אירועים + הוספת אירוע
+// לחיצה על תאריך בלוח — הצגת אירועים + הוספת אירוע חופשי
 function calDateActions(iso) {
   const evs = DB.all('events').filter((ev) => ev.date === iso);
   const heb = hebParts(new Date(iso + 'T12:00:00'));
   UI.modal(`${heb.day} ${heb.month} · ${fmtDateFull(iso)}`, `
     ${evs.length ? evs.map((ev) => `
       <div class="row" data-cal-event="${ev.id}">
-        <div class="icon-btn">${icon('coffee')}</div>
-        <div class="row-main"><div class="row-title">${e(ev.location || 'אירוע')}</div><div class="row-sub">${e(ev.speakers || '')}</div></div>
+        <div class="icon-btn">${icon(ev.kind === 'free' ? 'calendar' : 'coffee')}</div>
+        <div class="row-main">
+          <div class="row-title">${e(ev.title || ev.location || 'אירוע')}</div>
+          <div class="row-sub">${e(ev.time || ev.speakers || '')}${ev.notes ? ' · ' + e(ev.notes) : ''}</div>
+        </div>
+        <button class="icon-btn danger" data-cal-del="${ev.id}">${icon('trash', 15)}</button>
       </div>`).join('') : '<div class="empty-inline" style="margin-bottom:10px">אין אירועים ביום זה</div>'}
-    <button class="btn" id="cal-add-event">${icon('plus')} הוספת אירוע ליום זה</button>
+    <button class="btn" id="cal-add-free">${icon('plus')} הוספת אירוע</button>
+    <button class="btn btn-ghost" id="cal-add-morning" style="margin-top:9px">${icon('coffee')} בוקר ליולדות</button>
   `, (c) => {
-    c.querySelector('#cal-add-event').onclick = () => { UI.closeModal(); eventForm(null, iso); };
+    c.querySelector('#cal-add-free').onclick = () => { UI.closeModal(); calFreeEventForm(iso); };
+    c.querySelector('#cal-add-morning').onclick = () => { UI.closeModal(); eventForm(null, iso); };
     c.querySelectorAll('[data-cal-event]').forEach((el) => {
-      el.onclick = () => { UI.closeModal(); eventDetail(el.dataset.calEvent); };
+      el.onclick = () => {
+        const ev = DB.find('events', el.dataset.calEvent);
+        UI.closeModal();
+        if (ev && ev.kind === 'free') calFreeEventForm(iso, ev.id);
+        else eventDetail(el.dataset.calEvent);
+      };
     });
+    c.querySelectorAll('[data-cal-del]').forEach((el) => {
+      el.onclick = (ev) => {
+        ev.stopPropagation();
+        DB.remove('events', el.dataset.calDel);
+        UI.closeModal();
+        render();
+      };
+    });
+  });
+}
+
+// טופס אירוע חופשי — כותרת, שעה והערות
+function calFreeEventForm(iso, id) {
+  const ev = id ? DB.find('events', id) : { date: iso };
+  UI.modal(id ? 'עריכת אירוע' : 'אירוע חדש', `
+    <div id="fev">
+      ${UI.field('כותרת האירוע *', 'title', ev.title)}
+      ${UI.field('תאריך', 'date', freeDateFromISO(ev.date || iso))}
+      ${UI.field('שעה', 'time', ev.time, 'time')}
+      ${UI.textarea('הערות', 'notes', ev.notes)}
+      <button class="btn" id="fev-save">${icon('check')} שמירה</button>
+    </div>
+  `, (c) => {
+    c.querySelector('#fev-save').onclick = () => {
+      const data = UI.readForm(c.querySelector('#fev'));
+      if (!data.title) return UI.toast('חובה למלא כותרת');
+      data.date = freeDateToISO(data.date) || iso;
+      data.kind = 'free';
+      if (id) DB.update('events', id, data);
+      else DB.insert('events', data);
+      UI.closeModal();
+      UI.toast('האירוע נשמר');
+      render();
+    };
   });
 }
 
