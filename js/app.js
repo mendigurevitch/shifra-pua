@@ -293,56 +293,57 @@ function bindReminders(root) {
 function screenMyTasks() {
   const me = DB.me;
   const vid = me.volunteerId;
-  const today = todayISO();
 
-  const mine = DB.all('meals')
-    .filter((m) => (m.cookId === vid || m.driverId === vid) && m.date >= today && m.status !== 'cancelled')
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // רשימות השינוע השבועיות שהמנהלת שלחה למשנעת הזו
+  const myDeliveries = DB.weeklyList('meal').filter((w) => w.driverId === vid);
+  const myShabbat = DB.weeklyList('shabbat').filter((w) => w.driverId === vid);
+
+  const listCard = (title, iconName, list) => list.length ? `
+    <div class="section-title">${icon(iconName)} ${title} (${list.length})</div>
+    ${list.map((w) => {
+      const mo = DB.find('mothers', w.motherId);
+      if (!mo) return '';
+      return `
+        <div class="card">
+          <div class="card-row">
+            <div class="avatar">${icon('truck')}</div>
+            <div style="flex:1;min-width:0">
+              <div class="card-title">${w.done ? '✓ ' : ''}${e(mo.motherName)} ${e(mo.lastName || '')}</div>
+              <div class="card-sub" style="line-height:1.6">
+                ${icon('mappin', 13)} ${e(mo.address || 'אין כתובת')}
+                ${mo.entryCode ? `<br>🔑 ${e(mo.entryCode)}` : ''}
+                ${mo.phone ? `<br>${icon('phone', 13)} ${e(mo.phone)}` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:11px">
+            ${mo.address ? `<a class="btn btn-ghost btn-sm" style="flex:1" href="${wazeLink(mo.address)}" target="_blank">${icon('mappin', 14)} Waze</a>` : ''}
+            <button class="btn btn-sm ${w.done ? 'btn-ghost' : ''}" style="flex:1" data-week-done="${w.id}">${icon('check')} ${w.done ? 'בוצע ✓' : 'סימון כחולק'}</button>
+          </div>
+        </div>`;
+    }).join('')}` : '';
+
+  const total = myDeliveries.length + myShabbat.length;
 
   return `
     <div class="hero">
       <div class="hero-greet">היי ${e(me.name)},</div>
-      <div class="hero-name">${mine.length ? `${mine.length} שיבוצים קרובים` : 'אין שיבוצים כרגע'}</div>
+      <div class="hero-name">${total ? `${total} משלוחים השבוע` : 'אין משלוחים כרגע'}</div>
     </div>
 
-    ${mine.map((m) => {
-      const mo = DB.find('mothers', m.motherId);
-      if (!mo) return '';
-      const isDriver = m.driverId === vid;
-      return `
-        <div class="card">
-          <div class="card-row">
-            <div class="avatar">${icon(isDriver ? 'truck' : 'utensils')}</div>
-            <div style="flex:1">
-              <div class="card-title">${isDriver ? 'שינוע' : 'הכנת ארוחה'} · ${fmtDate(m.date)}</div>
-              <div class="card-sub">${relativeDay(m.date)}${m.deliveryTime ? ` · ${e(m.deliveryTime)}` : ''}</div>
-            </div>
-            <span class="badge ${m.status === 'done' ? 'ok' : ''}">${m.status === 'done' ? 'בוצע' : 'מתוכנן'}</span>
-          </div>
-
-          ${isDriver ? `
-            <div class="card-sub" style="margin-top:12px;line-height:1.6">
-              ${icon('mappin', 13)} ${e(mo.address || 'אין כתובת')}
-              ${mo.entryCode ? `<br>🔑 ${e(mo.entryCode)}` : ''}
-              ${mo.phone ? `<br>${icon('phone', 13)} ${e(mo.phone)}` : ''}
-            </div>` : ''}
-
-          ${m.status !== 'done' ? `
-            <button class="btn btn-sm" data-done="${m.id}" style="margin-top:12px;width:100%">
-              ${icon('check')} סימון כבוצע
-            </button>` : ''}
-        </div>`;
-    }).join('') || UI.empty('calendar', 'אין שיבוצים', 'המנהלת תשבץ אותך ותקבלי הודעה')}
+    ${listCard('ארוחות בוקר לחלוקה', 'utensils', myDeliveries)}
+    ${listCard('ערכות שבת לחלוקה', 'gift', myShabbat)}
+    ${!total ? UI.empty('calendar', 'אין משלוחים', 'המנהלת תשלח לך רשימה ותקבלי הודעה') : ''}
   `;
 }
 
 function bindMyTasks(root) {
-  root.querySelectorAll('[data-done]').forEach((el) => {
+  root.querySelectorAll('[data-week-done]').forEach((el) => {
     el.onclick = () => {
-      const m = DB.find('meals', el.dataset.done);
-      DB.update('meals', m.id, { status: 'done' });
-      DB.logEvent(m.motherId, 'meal', `ארוחת בוקר סופקה (${fmtDate(m.date)})`);
-      UI.toast('תודה רבה! 💗');
+      const w = DB.find('weekly', el.dataset.weekDone);
+      if (!w) return;
+      DB.update('weekly', w.id, { done: !w.done });
+      if (!w.done) { DB.logEvent(w.motherId, 'meal', w.kind === 'meal' ? 'ארוחת בוקר חולקה' : 'ערכת שבת חולקה'); UI.toast('תודה רבה! 💗'); }
       render();
     };
   });

@@ -10,7 +10,7 @@ const STORE_KEY = 'shifra-pua-data';
 const COLLECTIONS = [
   'users', 'mothers', 'volunteers', 'contacts', 'inventory',
   'meals', 'kits', 'birthGifts', 'yearGifts', 'events',
-  'timeline', 'notes', 'orders'
+  'timeline', 'notes', 'orders', 'weekly', 'shopping'
 ];
 
 let state = null;
@@ -252,6 +252,97 @@ const DB = {
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   },
 
+  // מסמן שכל הארוחות סופקו (שלב מתקדם ל"שבת")
+  markMealsDone(motherId) {
+    DB.mealsFor(motherId).forEach((m) => {
+      if (m.status !== 'done') DB.update('meals', m.id, { status: 'done' });
+    });
+  },
+
+  // מסמן שערכת שבת נמסרה (שלב מתקדם ל"אות")
+  markKitDelivered(motherId) {
+    const kit = DB.all('kits').find((k) => k.motherId === motherId);
+    if (kit) DB.update('kits', kit.id, { accepted: true, deliveredAt: todayISO() });
+    else DB.insert('kits', { motherId, offeredAt: todayISO(), accepted: true, deliveredAt: todayISO() });
+  },
+
+  // מסמן שהאות בספר תורה הוזמנה (שלב מתקדם ל"מתנה")
+  markLetterOrdered(motherId) {
+    const bg = DB.all('birthGifts').find((g) => g.motherId === motherId);
+    if (bg) DB.update('birthGifts', bg.id, { letterOrdered: true });
+  },
+
+  // מתנת לידה נמסרה → הועברה לארכיון
+  markBirthGiftDone(motherId) {
+    const bg = DB.all('birthGifts').find((g) => g.motherId === motherId);
+    if (bg) DB.update('birthGifts', bg.id, { status: 'done', deliveredAt: todayISO() });
+    DB.archiveMother(motherId);
+  },
+
+  // מסמן יולדת כמי שכבר קיבלה ארוחות + ערכת שבת (שלב = "אות")
+  markThroughShabbat(motherId) {
+    DB.markMealsDone(motherId);
+    DB.markKitDelivered(motherId);
+  },
+
+  // האם כבר קיים טלפון כזה (למניעת כפילויות בייבוא)
+  phoneExists(phone) {
+    const p = String(phone || '').replace(/\D/g, '');
+    if (!p) return false;
+    return DB.all('mothers').some((m) => String(m.phone || '').replace(/\D/g, '') === p);
+  },
+
+  // ---------- שינוע שבועי / ערכת שבת ----------
+  // מפתח שבוע: כל שבוע מתחיל בשישי 12:00 (אז הרשימה "מתאפסת" — פשוט מפתח חדש)
+  weekKey(now) {
+    const d = new Date(now || Date.now());
+    const diff = (d.getDay() - 5 + 7) % 7; // ימים מאז שישי האחרון
+    const fri = new Date(d);
+    fri.setDate(d.getDate() - diff);
+    fri.setHours(12, 0, 0, 0);
+    if (fri > d) fri.setDate(fri.getDate() - 7); // לפני שישי-צהריים? השבוע הקודם
+    return fri.toISOString().slice(0, 10);
+  },
+
+  // מוסיף יולדת לרשימה שבועית (kind = 'meal' | 'shabbat'); מונע כפילות באותו שבוע
+  addToWeekly(motherId, kind) {
+    const wk = DB.weekKey();
+    const exists = DB.all('weekly').find((w) => w.motherId === motherId && w.kind === kind && w.weekKey === wk);
+    if (exists) return exists;
+    return DB.insert('weekly', { motherId, kind, weekKey: wk, done: false, driverId: null });
+  },
+
+  // הרשימה הנוכחית (של השבוע הזה בלבד)
+  weeklyList(kind) {
+    const wk = DB.weekKey();
+    return DB.all('weekly').filter((w) => w.kind === kind && w.weekKey === wk);
+  },
+
+  // ---------- רשימת קניות (מלאי) ----------
+  addToShopping(itemId) {
+    const item = DB.find('inventory', itemId);
+    if (!item) return null;
+    const existing = DB.all('shopping').find((s) => s.itemId === itemId && !s.done);
+    if (existing) return existing;
+    return DB.insert('shopping', { itemId, name: item.name, done: false });
+  },
+
+  // ---------- ארכיון ----------
+  archiveMother(motherId) {
+    DB.update('mothers', motherId, { status: 'archived' });
+    DB.logEvent(motherId, 'archive', 'הועברה לארכיון (קיבלה מתנה)');
+  },
+
+  // מתנות גיל שנה שמתקרבות — חודש לפני יום ההולדת (למסך הבית)
+  yearGiftDueSoon() {
+    const today = todayISO();
+    return DB.all('yearGifts').filter((g) => {
+      if (g.status === 'done' || !g.dueDate) return false;
+      const left = daysBetween(today, g.dueDate);
+      return left <= 30 && left >= -30;
+    });
+  },
+
   // ============================================================
   //  לוגיקה עסקית
   // ============================================================
@@ -368,14 +459,24 @@ const DB = {
   upcomingBirthdays() {
     const now = new Date();
     return DB.all('volunteers')
-      .filter((v) => v.birthday)
       .map((v) => {
-        const b = new Date(v.birthday + 'T12:00:00');
-        const next = new Date(now.getFullYear(), b.getMonth(), b.getDate(), 12);
-        if (next < now) next.setFullYear(next.getFullYear() + 1);
+        let next = null;
+        // יום הולדת עברי — מחשב את המופע הלועזי של יום ההולדת השנה/הבאה
+        if (v.birthdayHeb && v.birthdayHeb.month && typeof hebrewToGregorian === 'function') {
+          const hy = hebParts(new Date()).yearNum;
+          for (const y of [hy, hy + 1]) {
+            const g = hebrewToGregorian(y, v.birthdayHeb.month, v.birthdayHeb.day);
+            if (g && g >= new Date(now.toDateString())) { next = g; break; }
+          }
+        } else if (v.birthday) {
+          const b = new Date(v.birthday + 'T12:00:00');
+          next = new Date(now.getFullYear(), b.getMonth(), b.getDate(), 12);
+          if (next < now) next.setFullYear(next.getFullYear() + 1);
+        }
+        if (!next) return null;
         return { v, days: Math.round((next - now) / 86400000) };
       })
-      .filter((x) => x.days <= 14)
+      .filter((x) => x && x.days <= 14 && x.days >= 0)
       .sort((a, b) => a.days - b.days);
   }
 };
@@ -396,7 +497,8 @@ const TABLE_OF = {
   users: 'users', mothers: 'mothers', volunteers: 'volunteers',
   contacts: 'contacts', inventory: 'inventory', meals: 'meals',
   kits: 'kits', birthGifts: 'birthGifts', yearGifts: 'yearGifts',
-  events: 'events', timeline: 'timeline', notes: 'notes', orders: 'orders'
+  events: 'events', timeline: 'timeline', notes: 'notes', orders: 'orders',
+  weekly: 'weekly', shopping: 'shopping'
 };
 
 // ------------------------------------------------------------

@@ -1084,3 +1084,69 @@ a.mc-line { color: var(--text); }
 
 /* stage progress: completed steps get a soft fill */
 .stage-ico.done > svg { background: #FCE7F0; color: var(--primary-light); }
+
+/* ===== HEADER ICONS (dashboard) ===== */
+.head-icons { display: flex; gap: 8px; align-items: center; }
+.head-ico {
+  position: relative;
+  width: 40px; height: 40px;
+  border-radius: 13px;
+  display: grid; place-items: center;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+.head-ico.warn { background: #FEE2E2; color: var(--danger); }
+.head-ico.has { background: #DBEAFE; color: var(--info); }
+.head-badge {
+  position: absolute;
+  top: -5px; left: -5px;
+  min-width: 18px; height: 18px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10.5px; font-weight: 800;
+  display: grid; place-items: center;
+  padding: 0 4px;
+}
+.head-ico.warn .head-badge { background: var(--danger); }
+
+/* weekly delivery box header */
+.wk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+
+/* ===== COLLAPSIBLE NEIGHBORHOODS ===== */
+.nbhd-block { margin-bottom: 9px; }
+.nbhd-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: 15px; font-weight: 800;
+  color: var(--text);
+}
+.nbhd-header.open { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.nbhd-header-name { display: flex; align-items: center; gap: 9px; }
+.nbhd-count { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.nbhd-body { background: var(--bg); border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 8px; }
+
+/* ===== HEBREW DATE PICKER ===== */
+.heb-picker { display: flex; gap: 8px; align-items: stretch; }
+.heb-picker select {
+  flex: 1;
+  padding: 12px 10px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  font-size: 14px; font-weight: 600;
+}
+.heb-year { display: flex; align-items: center; gap: 4px; background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 2px; }
+.heb-year button { width: 30px; height: 34px; border-radius: 9px; background: var(--card); color: var(--primary); font-weight: 800; font-size: 17px; }
+.heb-year span { min-width: 46px; text-align: center; font-weight: 800; font-size: 14px; }
+
+/* calendar event dot */
+.cal-cell.has-event { border-color: var(--primary-light); }
+.cal-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--primary); }
+.cal-cell { position: relative; }

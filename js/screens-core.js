@@ -8,29 +8,42 @@
 function screenDashboard() {
   const me = DB.me;
   const mothers = DB.all('mothers').filter((m) => m.status === 'active');
-  const today = todayISO();
-  const weekEnd = addDays(today, 7);
-  const weekMeals = DB.all('meals').filter((m) => m.date >= today && m.date <= weekEnd && m.status !== 'cancelled');
   const lowStock = DB.lowStock();
   const notes = me.role === 'admin' ? DB.all('notes').filter((n) => !n.read) : [];
-
-  // מתנות גיל שנה שדורשות טיפול (עד שבוע לפני יום ההולדת)
-  const yearDue = DB.all('yearGifts').filter((g) => {
-    if (g.status === 'done' || !g.dueDate) return false;
-    const left = daysBetween(today, g.dueDate);
-    return left <= CONFIG.YEAR_GIFT_REMINDER_DAYS && left >= -30;
-  });
+  const yearDue = DB.yearGiftDueSoon();
+  const delivery = DB.weeklyList('meal');
+  const shabbat = DB.weeklyList('shabbat');
 
   const quickActions = [
     { id: 'tasks', label: 'משימות', icon: 'filetext' },
     { id: 'torah', label: 'אות בס״ת', icon: 'scroll' },
-    { id: 'events', label: 'אירועים', icon: 'coffee' },
     { id: 'gifts', label: 'מתנות', icon: 'gift' },
     { id: 'inventory', label: 'מלאי', icon: 'package' },
     { id: 'neighborhoods', label: 'שכונות', icon: 'mappin' },
     { id: 'volunteers', label: 'מתנדבות', icon: 'users' },
+    { id: 'events', label: 'בוקר ליולדות', icon: 'coffee' },
     { id: 'mothers', label: 'יולדות', icon: 'heart' }
   ];
+
+  const weeklyBox = (title, iconName, list, kind) => `
+    <div class="card">
+      <div class="wk-head">
+        <div class="card-title" style="display:flex;align-items:center;gap:7px">${icon(iconName, 16)} ${title} (${list.length})</div>
+        ${list.length ? `<button class="btn btn-wa btn-sm" style="width:auto" data-send-week="${kind}">${icon('whatsapp')} למשנעת</button>` : ''}
+      </div>
+      ${list.length ? list.map((w) => {
+        const m = DB.find('mothers', w.motherId);
+        if (!m) return '';
+        return `
+          <div class="task-row" data-mother="${w.motherId}">
+            <div>
+              <div class="row-title">${w.done ? '✓ ' : ''}${e(m.motherName)} ${e(m.lastName || '')}</div>
+              <div class="row-sub">${e(m.address || '')} · ${e(nbhdName(m.neighborhood))}</div>
+            </div>
+            <button class="icon-btn" data-week-remove="${w.id}">${icon('x', 15)}</button>
+          </div>`;
+      }).join('') : '<div class="empty-inline">הרשימה ריקה — מתאפסת כל שישי 12:00</div>'}
+    </div>`;
 
   return `
     <div class="screen-head">
@@ -38,13 +51,17 @@ function screenDashboard() {
         <h2 class="screen-title">${icon('home')} מסך הבית</h2>
         <div class="screen-sub">סקירה מהירה של הפעילות בארגון</div>
       </div>
-      <button class="icon-btn" id="go-cal">${icon('calendar')}</button>
+      <div class="head-icons">
+        ${lowStock.length ? `<button class="head-ico warn" id="go-low" title="מלאי נמוך">${icon('alert', 18)}<span class="head-badge">${lowStock.length}</span></button>` : ''}
+        <button class="head-ico ${notes.length ? 'has' : ''}" id="go-msg" title="הודעות">${icon('message', 18)}${notes.length ? `<span class="head-badge">${notes.length}</span>` : ''}</button>
+        <button class="head-ico" id="go-cal" title="לוח שנה">${icon('calendar', 18)}</button>
+      </div>
     </div>
 
     ${yearDue.length ? `
       <div class="task-card-green">
-        <div class="task-card-title">${icon('cake', 16)} מתנות גיל שנה — לטיפול (${yearDue.length})</div>
-        ${yearDue.slice(0, 3).map((g) => {
+        <div class="task-card-title">${icon('cake', 16)} להכין מתנת גיל שנה (${yearDue.length})</div>
+        ${yearDue.slice(0, 4).map((g) => {
           const m = DB.find('mothers', g.motherId);
           if (!m) return '';
           return `
@@ -58,40 +75,8 @@ function screenDashboard() {
         }).join('')}
       </div>` : ''}
 
-    <div class="stat-grid stat-grid-3">
-      <div class="stat" data-go="inventory">
-        <div class="stat-ico warn">${icon('alert', 20)}</div>
-        <div class="stat-num" style="color:var(--danger)">${lowStock.length}</div>
-        <div class="stat-label">מלאי נמוך</div>
-      </div>
-      <div class="stat" data-go="messages">
-        <div class="stat-ico">${icon('message', 20)}</div>
-        <div class="stat-num">${notes.length}</div>
-        <div class="stat-label">הודעות חדשות</div>
-      </div>
-      <div class="stat" data-go="mothers">
-        <div class="stat-ico pink">${icon('heart', 20)}</div>
-        <div class="stat-num" style="color:var(--primary)">${mothers.length}</div>
-        <div class="stat-label">יולדות</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="display:flex;align-items:center;gap:7px;margin-bottom:${notes.length ? '12px' : '0'}">
-        ${icon('message', 16)} הודעות מהמנהלה
-      </div>
-      ${notes.length ? notes.map((n) => {
-        const from = DB.find('users', n.fromUserId);
-        return `
-          <div class="task-row" data-note="${n.id}">
-            <div>
-              <div class="row-title">${e(n.text)}</div>
-              <div class="row-sub">${e(from ? from.name : 'מנהלת משנית')} · ${relativeDay(n.date)}</div>
-            </div>
-            <button class="icon-btn" data-read="${n.id}">${icon('check', 15)}</button>
-          </div>`;
-      }).join('') : '<div class="empty-inline">אין הודעות חדשות</div>'}
-    </div>
+    ${weeklyBox('שינוע שבועי', 'truck', delivery, 'meal')}
+    ${weeklyBox('ערכת שבת', 'gift', shabbat, 'shabbat')}
 
     <div class="quick-actions">
       ${quickActions.map((a) => `
@@ -116,9 +101,6 @@ function bindDashboard(root) {
     el.onclick = () => go('mother-profile', el.dataset.mother);
   });
 
-  const cal = root.querySelector('#go-cal');
-  if (cal) cal.onclick = () => go('calendar');
-
   root.querySelectorAll('[data-read]').forEach((el) => {
     el.onclick = (ev) => {
       ev.stopPropagation();
@@ -133,6 +115,58 @@ function bindDashboard(root) {
       const text = `יום הולדת שמח ${v.name}! 🎂💗\nכל צוות ${CONFIG.ORG_NAME} מאחל לך שנה מלאה בבריאות, שמחה ונחת.\nתודה על כל הנתינה שלך!`;
       previewMessage('ברכת יום הולדת', text, v.phone);
     };
+  });
+
+  // אייקוני כותרת
+  const low = root.querySelector('#go-low');
+  if (low) low.onclick = () => go('inventory');
+  const msg = root.querySelector('#go-msg');
+  if (msg) msg.onclick = () => go('messages');
+  const cal = root.querySelector('#go-cal');
+  if (cal) cal.onclick = () => go('calendar');
+
+  // הסרת יולדת מהרשימה השבועית
+  root.querySelectorAll('[data-week-remove]').forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); DB.remove('weekly', el.dataset.weekRemove); render(); };
+  });
+
+  // שליחת הרשימה השבועית למשנעת
+  root.querySelectorAll('[data-send-week]').forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); sendWeeklyToDriver(el.dataset.sendWeek); };
+  });
+}
+
+// שליחת רשימת שינוע/ערכות שבת למשנעת אחת (wa.me עם כתובות + Waze)
+function sendWeeklyToDriver(kind) {
+  const list = DB.weeklyList(kind);
+  if (!list.length) return UI.toast('הרשימה ריקה');
+  const drivers = DB.all('volunteers').filter((v) => v.roleType === 'driver' || v.roleType === 'both' || !v.roleType);
+
+  UI.modal('שליחה למשנעת', `
+    <div class="card-sub" style="margin-bottom:12px">בחרי משנעת — היא תקבל את כל הרשימה (${list.length}) עם כתובות וקישורי Waze.</div>
+    ${drivers.length ? drivers.map((v) => `
+      <div class="row" data-driver="${v.id}">
+        <div class="avatar">${e(UI.initials(v.name))}</div>
+        <div class="row-main"><div class="row-title">${e(v.name)}</div><div class="row-sub">${e(v.phone || '')}</div></div>
+        ${icon('whatsapp')}
+      </div>`).join('') : '<div class="empty-inline">אין מתנדבות משנעות. הוסיפי במסך מתנדבות.</div>'}
+  `, (c) => {
+    c.querySelectorAll('[data-driver]').forEach((el) => {
+      el.onclick = () => {
+        const v = DB.find('volunteers', el.dataset.driver);
+        // משייך את כל הרשומות למשנעת (כדי שתראה אותן בכניסה שלה)
+        list.forEach((w) => DB.update('weekly', w.id, { driverId: v.id }));
+        const lines = list.map((w, i) => {
+          const m = DB.find('mothers', w.motherId);
+          if (!m) return '';
+          return `${i + 1}. ${m.motherName} ${m.lastName || ''}\n📍 ${m.address || ''}${m.entryCode ? ' · קוד ' + m.entryCode : ''}\n🗺️ ${wazeLink(m.address)}`;
+        }).filter(Boolean).join('\n\n');
+        const label = kind === 'meal' ? 'ארוחות בוקר' : 'ערכות שבת';
+        const text = `היי ${v.name}! 🚗\nרשימת ${label} לשבוע:\n\n${lines}\n\nתסמני V באפליקציה כשחילקת. תודה! 💗`;
+        UI.closeModal();
+        previewMessage('רשימת שינוע', text, v.phone);
+      };
+    });
   });
 }
 
@@ -290,13 +324,13 @@ function stageIcons(m) {
   const activeIdx = stages.findIndex((s) => s.id === active);
   return `<div class="stage-icons">
     ${stages.map((s, i) => `
-      <div class="stage-ico ${i < activeIdx ? 'done' : ''} ${active === s.id ? 'active' : ''}" title="${s.label}">
+      <button class="stage-ico ${i < activeIdx ? 'done' : ''} ${active === s.id ? 'active' : ''}" title="${s.label}" data-stage-act="${s.id}" data-stage-mother="${m.id}">
         ${icon(s.icon, 15)}<span>${s.label}</span>
-      </div>`).join('')}
+      </button>`).join('')}
   </div>`;
 }
 
-// השלב הנוכחי של היולדת במסלול
+// השלב הנוכחי של היולדת במסלול: ארוחות → שבת → אות → מתנה → גיל שנה
 function currentStage(m) {
   const meals = DB.mealsFor(m.id);
   const mealsDone = meals.length && meals.every((x) => x.status === 'done' || x.status === 'cancelled');
@@ -304,7 +338,10 @@ function currentStage(m) {
   const kit = DB.all('kits').find((k) => k.motherId === m.id);
   if (!kit || !kit.deliveredAt) return 'shabbat';
   const bg = DB.all('birthGifts').find((g) => g.motherId === m.id);
+  if (bg && !bg.letterOrdered) return 'torah';
   if (bg && bg.status !== 'done') return 'birthGift';
+  const yg = DB.all('yearGifts').find((g) => g.motherId === m.id);
+  if (yg && yg.status === 'done') return 'done';
   return 'yearGift';
 }
 
@@ -317,6 +354,54 @@ function babyIcon(gender) {
 
 function wazeLink(address) {
   return `https://waze.com/ul?q=${encodeURIComponent(address || '')}&navigate=yes`;
+}
+
+// לחיצה על אייקון שלב בכרטיס היולדת — כל אייקון והפעולה שלו
+function stageAction(motherId, stage) {
+  const m = DB.find('mothers', motherId);
+  if (!m) return;
+  if (stage === 'meals') {
+    DB.addToWeekly(motherId, 'meal');
+    DB.markMealsDone(motherId);
+    UI.toast(`${m.motherName} נוספה לשינוע השבועי`);
+  } else if (stage === 'shabbat') {
+    DB.addToWeekly(motherId, 'shabbat');
+    DB.markKitDelivered(motherId);
+    UI.toast(`${m.motherName} נוספה לרשימת ערכות שבת`);
+  } else if (stage === 'torah') {
+    DB.markLetterOrdered(motherId);
+    exportOneTorah(m);
+  } else if (stage === 'birthGift') {
+    UI.confirm('מתנת לידה', `לסמן שמתנת הלידה של ${e(m.motherName)} נמסרה ולהעביר לארכיון?`, () => {
+      DB.markBirthGiftDone(motherId);
+      UI.toast('הועברה לארכיון');
+      render();
+    });
+    return;
+  } else if (stage === 'yearGift') {
+    const yg = DB.all('yearGifts').find((g) => g.motherId === motherId);
+    if (yg) DB.update('yearGifts', yg.id, { status: 'done', collectedAt: todayISO() });
+    UI.toast('מתנת גיל שנה סומנה כנאספה');
+  }
+  render();
+}
+
+// ייצוא פרטי אות בספר תורה של יולדת אחת (CSV עם BOM)
+function exportOneTorah(m) {
+  const header = ['שם הילד/ה', 'שם האמא', 'שם משפחה', 'תאריך לידה', 'שכונה', 'טלפון'];
+  const row = [m.childName || '', m.motherName || '', m.lastName || '', m.birthDate || '', nbhdName(m.neighborhood), m.phone || ''];
+  const csv = [header, row].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  downloadCSV('אות-' + (m.motherName || 'יולדת') + '.csv', csv);
+  UI.toast('הפרטים יוצאו לאקסל');
+}
+
+function downloadCSV(filename, csv) {
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function motherCard(m) {
@@ -377,6 +462,11 @@ function bindMothers(root) {
   });
   root.querySelectorAll('[data-edit]').forEach((el) => {
     el.onclick = (ev) => { ev.stopPropagation(); motherForm(el.dataset.edit); };
+  });
+
+  // לחיצה על אייקון שלב בכרטיס
+  root.querySelectorAll('[data-stage-act]').forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); stageAction(el.dataset.stageMother, el.dataset.stageAct); };
   });
 
   const add = root.querySelector('#add-mother');
@@ -449,41 +539,13 @@ function motherForm(id, prefill) {
 }
 
 // ------------------------------------------------------------
-//  הוספת יולדת מהודעת טקסט חופשי
-//  מנתח שם/טלפון/כתובת/קוד מתוך טקסט (למשל הודעת וואטסאפ)
+//  הוספת יולדות מהודעת טקסט חופשי (אחת או כמה)
 // ------------------------------------------------------------
-function parseMotherText(text) {
-  const out = {};
-  // טלפון ישראלי
-  const phone = text.match(/0\d[-\s]?\d{3}[-\s]?\d{4}|0\d{8,9}/);
-  if (phone) out.phone = phone[0].replace(/[-\s]/g, '');
-
-  // קוד כניסה
-  const code = text.match(/קוד[:\s]*([0-9]{2,6}#?)/);
-  if (code) out.entryCode = code[1];
-
-  // שכונה — זיהוי חכם כולל כתיבים חלופיים
-  const nbId = detectNeighborhood(text);
-  if (nbId) out.neighborhood = nbId;
-
-  // כתובת: שורה שמכילה מספר בית (רחוב + מספר)
-  const addr = text.match(/([א-ת'"]+(?:\s[א-ת'"]+)*\s\d{1,3})/);
-  if (addr && !/^0/.test(addr[1])) out.address = addr[1].trim();
-
-  // שם: הראשון אחרי "שם" או המילים הראשונות
-  const nameM = text.match(/(?:שם|יולדת|ילדה)[:\s]+([א-ת]+(?:\s[א-ת]+)?)/);
-  if (nameM) out.motherName = nameM[1].trim();
-  else {
-    const firstWords = text.trim().split(/[\s,]+/).slice(0, 2).filter((w) => /^[א-ת]+$/.test(w));
-    if (firstWords.length) out.motherName = firstWords.join(' ');
-  }
-  return out;
-}
-
 function motherFromMessage() {
-  UI.modal('הוספה מהודעת טקסט', `
+  UI.modal('הוספה מהודעה', `
     <div class="card-sub" style="margin-bottom:12px;line-height:1.6">
-      הדביקי הודעה שמכילה פרטי יולדת. המערכת תזהה שם, טלפון, כתובת וקוד — ותמלא כרטיס.
+      הדביקי הודעה עם פרטי יולדת אחת או כמה. המערכת תזהה שם, טלפון (10 ספרות),
+      שכונה, כתובת וקוד. אם יש כמה יולדות בהודעה — היא תיצור כמה כרטיסים.
     </div>
     <div id="ai">
       ${UI.textarea('טקסט ההודעה', 'text', '')}
@@ -493,58 +555,192 @@ function motherFromMessage() {
     c.querySelector('#ai-parse').onclick = () => {
       const { text } = UI.readForm(c.querySelector('#ai'));
       if (!text) return UI.toast('הדביקי טקסט');
-      const parsed = parseMotherText(text);
-      if (!parsed.notes) parsed.notes = text.slice(0, 300);
+      const recs = parseMothersBulk(text);
       UI.closeModal();
-      // פותח את טופס היולדת עם השדות שזוהו
-      motherFormPrefilled(parsed);
+
+      if (recs.length === 0) return UI.toast('לא זוהו פרטים');
+      if (recs.length === 1) {
+        // יולדת אחת → פתיחת טופס לאישור/עריכה
+        motherForm(null, recs[0]);
+        return;
+      }
+      // כמה יולדות → תצוגת אישור לפני הוספה
+      confirmBulkMothers(recs);
     };
   });
 }
 
-// טופס יולדת עם ערכים שזוהו מראש
-function motherFormPrefilled(data) {
-  motherForm(null, data);
+// אישור הוספת כמה יולדות שזוהו מהודעה
+function confirmBulkMothers(recs) {
+  UI.modal(`זוהו ${recs.length} יולדות`, `
+    <div class="card-sub" style="margin-bottom:12px">בדקי ולחצי הוספה. אפשר לתקן כל כרטיס אחרי ההוספה.</div>
+    <div style="max-height:44vh;overflow-y:auto">
+      ${recs.map((r) => `
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">${e(r.motherName || '(ללא שם)')}</div>
+            <div class="row-sub">${e(r.phone || '')}${r.address ? ' · ' + e(r.address) : ''}${r.neighborhood ? ' · ' + e(nbhdName(r.neighborhood)) : ''}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <button class="btn" id="bulk-add" style="margin-top:14px">${icon('check')} הוספת ${recs.length} יולדות</button>
+  `, (c) => {
+    c.querySelector('#bulk-add').onclick = () => {
+      let added = 0, skipped = 0;
+      recs.forEach((r) => {
+        if (r.phone && DB.phoneExists(r.phone)) { skipped++; return; }
+        DB.addMother({
+          motherName: r.motherName || '(ללא שם — נא לעדכן)',
+          childName: r.childName || '', childGender: r.childGender || '',
+          phone: r.phone || '', neighborhood: r.neighborhood || '',
+          address: r.address || '', entryCode: r.entryCode || ''
+        });
+        added++;
+      });
+      UI.closeModal();
+      UI.toast(`נוספו ${added}${skipped ? ` · דילוג על ${skipped} כפילויות` : ''}`);
+      render();
+    };
+  });
 }
 
 // ------------------------------------------------------------
 //  ייבוא יולדות מאקסל (CSV)
 // ------------------------------------------------------------
+// מנתח רשימת יולדות מטקסט חופשי (הודעות/מסמך) — שם, טלפון, שכונה, כתובת, קוד, תינוק
+function parseMothersBulk(text) {
+  const raw = String(text).replace(/\s+/g, ' ');
+  const phoneRe = /(?:\+?972[\s-]?|0)5\d(?:[\s-]?\d){7}/g;
+  const normPhone = (p) => { let d = p.replace(/\D/g, ''); if (d.startsWith('972')) d = '0' + d.slice(3); if (d.length === 9) d = '0' + d; return d.slice(0, 10); };
+  const headerRe = /\*([^*]{1,30})\*/g;
+  const headers = []; let hm;
+  while ((hm = headerRe.exec(raw))) { const t = hm[1].trim(); headers.push({ idx: hm.index, end: hm.index + hm[0].length, txt: t, nbId: detectNeighborhood(t) }); }
+  const phones = []; let pm;
+  while ((pm = phoneRe.exec(raw))) phones.push({ idx: pm.index, end: pm.index + pm[0].length, phone: normPhone(pm[0]) });
+
+  const ADDR = /^(רחוב|קומה|דירה|קוד|מעלית|כניסה|אין|יש|שומר|סולמית|כוכבית|מפתח|ואז|בעלה|להתקשר|ימין|שמאל|פעמון|טלפון|מסרה|אמרה|קרקע|קומת|דלת|ב|א|ג|ד|ה|ו)$/;
+  const junk = /^(בכניסה|פתוחה|אפס|לא |והיא|ירד|תל ברוך|בית |קודם|כדאי|במעלית|יגיעו|או |שכונת|נווה אביבים יולדת|ללא |חיים לבנון|לוי אשכול|מעונות|יולדת|מתן|כרמל לוי)/;
+  const strip = (s) => s.replace(/\*[^*]*\*/g, ' ').replace(/[+\d()#*׳'"?,.\-–]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const out = []; const seen = new Set();
+  for (let i = 0; i < phones.length; i++) {
+    const p = phones[i]; if (seen.has(p.phone)) continue;
+    const prevEnd = i > 0 ? phones[i - 1].end : 0;
+    const nextIdx = i < phones.length - 1 ? phones[i + 1].idx : raw.length;
+    const beforeSeg = raw.slice(prevEnd, p.idx), afterSeg = raw.slice(p.end, nextIdx);
+    // שכונה: קודם מכותרת * *, אחרת מזיהוי בטקסט של היולדת עצמה (למשל "נווה אביבים" בשורה)
+    let nb = ''; for (const h of headers) if (h.end <= p.idx && h.nbId) nb = h.nbId;
+    // הטקסט שאחרי הטלפון שייך ליולדת זו; לפניו עלול להיות זנב של הקודמת
+    const inlineNb = detectNeighborhood(afterSeg) || detectNeighborhood(beforeSeg);
+    if (inlineNb) nb = inlineNb;
+
+    // מסירים שמות שכונות מהטקסט כדי שלא ידלפו לשם/כתובת
+    const stripNb = (s) => { NEIGHBORHOODS.forEach((n) => { s = s.split(n.name).join(' '); }); return s.replace(/נוה אביבים|הירוקה|גימל|שכונת/g, ' '); };
+
+    let name = '';
+    const nm = headers.filter((h) => !h.nbId && h.idx >= prevEnd && h.idx < p.idx && /[א-ת]/.test(h.txt) && !/^\d/.test(h.txt) && h.txt.length < 20);
+    if (nm.length) name = nm[nm.length - 1].txt;
+    else {
+      let s = stripNb(beforeSeg.replace(/\*[^*]*\*/g, ' ')).replace(/^.*[0-9)]/, '');
+      const w = strip(s).split(' ').filter((x) => /[א-ת]/.test(x) && x.length >= 2 && !ADDR.test(x));
+      name = w.slice(0, 3).join(' ');
+    }
+    if (name && junk.test(name)) name = '';
+
+    const addrM = afterSeg.replace(/\*[^*]*\*/g, ' ').match(/([א-ת'׳"]{2,}(?:\s[א-ת'׳"]{2,}){0,2}\s\d{1,3})(?:[,\s]+קומה\s?[\d.]+)?(?:[,\s]+דירה\s?\d+)?/);
+    const address = addrM ? addrM[0].replace(/\s+/g, ' ').trim().slice(0, 55) : '';
+    const codeM = afterSeg.match(/קוד[^0-9*#]{0,8}(\*?\d[\d*#]{1,6})/);
+    const babyM = afterSeg.match(/(תינוקת|התינוקת)\s*:?\s*([א-ת' ]{2,20})/) || afterSeg.match(/(תינוק|בייבי|הבייבי|שם התינוק)\s*:?\s*([א-ת' ]{2,20})/);
+    let childName = '', childGender = '';
+    if (babyM) { childGender = /תינוקת/.test(babyM[1]) ? 'girl' : 'boy'; childName = (babyM[2] || '').trim().split(/\s+/).slice(0, 3).join(' '); }
+
+    out.push({ motherName: name, phone: p.phone, neighborhood: nb, address, entryCode: codeM ? codeM[1] : '', childName, childGender });
+    seen.add(p.phone);
+  }
+  return out;
+}
+
+// חילוץ טקסט מקובץ docx (zip עם document.xml) — טעינת JSZip מ-CDN
+function loadJSZip() {
+  return new Promise((resolve, reject) => {
+    if (window.JSZip) return resolve(window.JSZip);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+    s.onload = () => resolve(window.JSZip);
+    s.onerror = () => reject(new Error('לא ניתן לטעון את מפענח ה-docx'));
+    document.head.appendChild(s);
+  });
+}
+
+async function docxToText(file) {
+  const JSZip = await loadJSZip();
+  const zip = await JSZip.loadAsync(file);
+  const xml = await zip.file('word/document.xml').async('string');
+  return xml.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&[a-z]+;/g, ' ');
+}
+
 function importMothersExcel() {
-  UI.modal('ייבוא מאקסל', `
+  UI.modal('ייבוא רשימת יולדות', `
     <div class="card-sub" style="margin-bottom:12px;line-height:1.6">
-      קובץ CSV עם עמודות: שם האמא, שם משפחה, שם הילד, טלפון, שכונה, כתובת, תאריך לידה.
-      השורה הראשונה = כותרות.
+      בחרי קובץ <b>Word (docx)</b> או <b>CSV</b> עם רשימת יולדות.
+      המערכת תזהה שם, טלפון, שכונה, כתובת וקוד — ותמנע כפילויות לפי טלפון.
     </div>
-    <button class="btn" id="xls-pick">${icon('download')} בחירת קובץ</button>
+    <div class="check-row">
+      <input type="checkbox" id="imp-shabbat" checked>
+      <label for="imp-shabbat">כבר קיבלו ארוחות + ערכת שבת (שלב "אות")</label>
+    </div>
+    <button class="btn" id="xls-pick" style="margin-top:8px">${icon('download')} בחירת קובץ</button>
+    <div id="imp-status" style="margin-top:12px"></div>
   `, (c) => {
     c.querySelector('#xls-pick').onclick = () => {
+      const throughShabbat = c.querySelector('#imp-shabbat').checked;
+      const status = c.querySelector('#imp-status');
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.csv,text/csv';
-      input.onchange = () => {
+      input.accept = '.csv,.txt,.docx';
+      input.onchange = async () => {
         const f = input.files[0];
         if (!f) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const rows = String(reader.result).replace(/^﻿/, '').split(/\r?\n/).filter((r) => r.trim());
-          let count = 0;
-          rows.slice(1).forEach((line) => {
-            const cols = line.split(',').map((s) => s.replace(/^"|"$/g, '').trim());
-            if (!cols[0]) return;
-            const nbId = detectNeighborhood(cols[4]) || detectNeighborhood(cols[5]);
-            DB.addMother({
-              motherName: cols[0], lastName: cols[1] || '', childName: cols[2] || '',
-              phone: cols[3] || '', neighborhood: nbId, address: cols[5] || '',
-              birthDate: cols[6] || ''
+        status.innerHTML = '<div class="empty-inline">קורא את הקובץ...</div>';
+        try {
+          let records;
+          if (/\.docx$/i.test(f.name)) {
+            records = parseMothersBulk(await docxToText(f));
+          } else {
+            const txt = await f.text();
+            // CSV עם כותרות, או טקסט חופשי
+            if (/,/.test(txt) && /שם|טלפון/.test(txt.split(/\r?\n/)[0] || '')) {
+              records = txt.replace(/^﻿/, '').split(/\r?\n/).slice(1).filter((r) => r.trim()).map((line) => {
+                const cols = line.split(',').map((s) => s.replace(/^"|"$/g, '').trim());
+                return { motherName: cols[0], childName: cols[1] || '', childGender: cols[2] === 'בת' ? 'girl' : cols[2] === 'בן' ? 'boy' : '', phone: cols[3] || '', neighborhood: detectNeighborhood(cols[4] || ''), address: cols[5] || '', entryCode: cols[6] || '' };
+              });
+            } else {
+              records = parseMothersBulk(txt);
+            }
+          }
+
+          let added = 0, skipped = 0, noName = 0;
+          records.forEach((r) => {
+            if (!r.phone && !r.motherName) return;
+            if (r.phone && DB.phoneExists(r.phone)) { skipped++; return; }
+            if (!r.motherName) noName++;
+            const mother = DB.addMother({
+              motherName: r.motherName || '(ללא שם — נא לעדכן)',
+              childName: r.childName || '', childGender: r.childGender || '',
+              phone: r.phone || '', neighborhood: r.neighborhood || '',
+              address: r.address || '', entryCode: r.entryCode || ''
             });
-            count++;
+            if (throughShabbat) DB.markThroughShabbat(mother.id);
+            added++;
           });
+
           UI.closeModal();
-          UI.toast(`יובאו ${count} יולדות`);
+          UI.toast(`יובאו ${added} · דילוג על ${skipped} כפילויות`);
+          if (noName) setTimeout(() => UI.toast(`${noName} ללא שם — סומנו לעדכון`), 2600);
           render();
-        };
-        reader.readAsText(f);
+        } catch (err) {
+          status.innerHTML = `<div class="alert"><div class="alert-text">${e(err.message)}</div></div>`;
+        }
       };
       input.click();
     };
@@ -732,6 +928,7 @@ function screenVolunteers() {
           <div style="flex:1;min-width:0">
             <div class="card-title">${e(v.name)}</div>
             <div class="card-sub">${e(VOLUNTEER_TYPES[v.roleType] || '')}${v.availability ? ` · ${e(v.availability)}` : ''}</div>
+            ${v.birthdayHeb && v.birthdayHeb.month ? `<div class="card-sub">${icon('cake', 12)} ${gematria(v.birthdayHeb.day)} ${e(v.birthdayHeb.month)}</div>` : ''}
           </div>
           ${v.phone ? `<button class="icon-btn wa" data-vwa="${v.id}">${icon('whatsapp')}</button>` : ''}
           <button class="icon-btn" data-vedit="${v.id}">${icon('edit')}</button>
@@ -768,12 +965,34 @@ function bindVolunteers(root) {
 
 function volunteerForm(id) {
   const v = id ? DB.find('volunteers', id) : {};
+  const hb = v.birthdayHeb || {}; // {day, month, year}
+  const curHebYear = hebParts(new Date()).yearNum;
+  const selYear = hb.year || (curHebYear - 30);
+  const months = hebMonthsOfYear(selYear);
+
   UI.modal(id ? 'עריכת מתנדבת' : 'מתנדבת חדשה', `
     <div id="vf">
       ${UI.field('שם *', 'name', v.name)}
       ${UI.field('טלפון', 'phone', v.phone, 'tel')}
       ${UI.field('כתובת', 'address', v.address)}
-      ${UI.field('יום הולדת', 'birthday', v.birthday, 'date')}
+
+      <div class="field">
+        <label>יום הולדת עברי</label>
+        <div class="heb-picker">
+          <select name="hb_day">
+            ${Array.from({ length: 30 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${hb.day === d ? 'selected' : ''}>${gematria(d)}</option>`).join('')}
+          </select>
+          <select name="hb_month" id="hb-month">
+            ${months.map((mn) => `<option value="${e(mn)}" ${hb.month === mn ? 'selected' : ''}>${e(mn)}</option>`).join('')}
+          </select>
+          <div class="heb-year">
+            <button type="button" id="hy-minus">−</button>
+            <span id="hy-val" data-year="${selYear}">${gematria(selYear)}</span>
+            <button type="button" id="hy-plus">+</button>
+          </div>
+        </div>
+      </div>
+
       ${UI.select('סוג תפקיד', 'roleType', v.roleType,
         Object.entries(VOLUNTEER_TYPES).map(([k, l]) => ({ value: k, label: l })))}
       ${UI.field('זמינות (ימים מועדפים)', 'availability', v.availability)}
@@ -781,9 +1000,32 @@ function volunteerForm(id) {
       ${id ? `<button class="btn btn-ghost" id="vf-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקה</button>` : ''}
     </div>
   `, (c) => {
+    // ניווט בין שנים עבריות — מעדכן את רשימת החודשים (שנה מעוברת)
+    const yv = c.querySelector('#hy-val');
+    const refreshMonths = () => {
+      const y = Number(yv.dataset.year);
+      yv.textContent = gematria(y);
+      const sel = c.querySelector('#hb-month');
+      const cur = sel.value;
+      const ms = hebMonthsOfYear(y);
+      sel.innerHTML = ms.map((mn) => `<option value="${mn}" ${mn === cur ? 'selected' : ''}>${mn}</option>`).join('');
+    };
+    c.querySelector('#hy-minus').onclick = () => { yv.dataset.year = Number(yv.dataset.year) - 1; refreshMonths(); };
+    c.querySelector('#hy-plus').onclick = () => { yv.dataset.year = Number(yv.dataset.year) + 1; refreshMonths(); };
+
     c.querySelector('#vf-save').onclick = () => {
       const data = UI.readForm(c.querySelector('#vf'));
       if (!data.name) return UI.toast('חובה למלא שם');
+
+      // תאריך עברי → שמירה + חישוב לועזי (לצורך תזכורת)
+      const hDay = Number(c.querySelector('[name="hb_day"]').value);
+      const hMonth = c.querySelector('#hb-month').value;
+      const hYear = Number(yv.dataset.year);
+      data.birthdayHeb = { day: hDay, month: hMonth, year: hYear };
+      const greg = hebrewToGregorian(hYear, hMonth, hDay);
+      data.birthday = greg ? greg.toISOString().slice(0, 10) : '';
+      delete data.hb_day; delete data.hb_month;
+
       if (id) DB.update('volunteers', id, data);
       else DB.insert('volunteers', data);
       UI.closeModal();
@@ -873,6 +1115,7 @@ function screenInventory() {
   const all = DB.all('inventory');
   const low = DB.lowStock();
   const list = all.filter((i) => (i.category || 'other') === invTab);
+  const shopping = DB.all('shopping').filter((s) => !s.done);
 
   return `
     <div class="screen-head">
@@ -883,11 +1126,22 @@ function screenInventory() {
       <button class="btn btn-sm" id="add-inv" style="width:auto">${icon('plus')} פריט חדש</button>
     </div>
 
+    ${shopping.length ? `
+      <div class="card" style="background:var(--gradient-soft)">
+        <div class="wk-head">
+          <div class="card-title" style="display:flex;align-items:center;gap:7px">${icon('package', 16)} רשימת קניות (${shopping.length})</div>
+          <button class="btn btn-wa btn-sm" style="width:auto" id="send-shop">${icon('whatsapp')} שליחה לשבי</button>
+        </div>
+        <div class="low-chips" style="margin-top:8px">
+          ${shopping.map((s) => `<span class="low-chip" data-shop-remove="${s.id}">${e(s.name)} ✕</span>`).join('')}
+        </div>
+      </div>` : ''}
+
     ${low.length ? `
       <div class="low-panel">
         <div class="low-panel-title">${icon('alert', 15)} פריטים במלאי נמוך (${low.length})</div>
         <div class="low-chips">
-          ${low.map((i) => `<span class="low-chip">${e(i.name)} ${i.qty}/${i.minQty}</span>`).join('')}
+          ${low.map((i) => `<span class="low-chip" data-shop-add="${i.id}">${e(i.name)} ${i.qty}/${i.minQty} +</span>`).join('')}
         </div>
       </div>` : ''}
 
@@ -921,7 +1175,7 @@ function invCard(i) {
       <div class="inv-meta">${e(i.unit || 'יח')}׳ · מינימום ${i.minQty}</div>
       <div class="inv-actions">
         <button class="inv-del" data-invdel="${i.id}">${icon('trash', 15)}</button>
-        <button class="inv-order" data-invorder="${i.id}" title="הזמנה">${icon('package', 15)}</button>
+        <button class="inv-order" data-shop-add="${i.id}" title="הוספה לרשימת קניות">${icon('package', 15)}</button>
         <button class="inv-step" data-invplus="${i.id}">${icon('plus', 16)}</button>
         <button class="inv-step" data-invminus="${i.id}" ${empty ? 'disabled' : ''}>${icon('minus', 16)}</button>
       </div>
@@ -960,25 +1214,30 @@ function bindInventory(root) {
     };
   });
 
-  root.querySelectorAll('[data-invorder]').forEach((el) => {
-    el.onclick = () => {
-      const item = DB.find('inventory', el.dataset.invorder);
-      UI.modal(`הזמנת ${e(item.name)}`, `
-        <div id="ordf">
-          ${UI.field('כמה להוסיף למלאי?', 'add', 0, 'number')}
-          <button class="btn" id="ordf-save">${icon('check')} עדכון מלאי</button>
-        </div>
-      `, (c) => {
-        c.querySelector('#ordf-save').onclick = () => {
-          const { add } = UI.readForm(c.querySelector('#ordf'));
-          DB.update('inventory', item.id, { qty: item.qty + (add || 0) });
-          UI.closeModal();
-          UI.toast('המלאי עודכן');
-          render();
-        };
-      });
+  // הוספה לרשימת קניות
+  root.querySelectorAll('[data-shop-add]').forEach((el) => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      const item = DB.find('inventory', el.dataset.shopAdd);
+      DB.addToShopping(item.id);
+      UI.toast(`${item.name} נוסף לרשימת הקניות`);
+      render();
     };
   });
+
+  // הסרה מרשימת קניות
+  root.querySelectorAll('[data-shop-remove]').forEach((el) => {
+    el.onclick = () => { DB.remove('shopping', el.dataset.shopRemove); render(); };
+  });
+
+  // שליחת רשימת הקניות לשבי בוואטסאפ
+  const sendShop = root.querySelector('#send-shop');
+  if (sendShop) sendShop.onclick = () => {
+    const items = DB.all('shopping').filter((s) => !s.done);
+    if (!items.length) return UI.toast('הרשימה ריקה');
+    const text = `היי שבי! 🛒\nרשימת קניות לארגון ${CONFIG.ORG_NAME}:\n\n${items.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}\n\nתודה רבה! 💗`;
+    previewMessage('רשימת קניות לשבי', text, CONFIG.SHOPPING_PHONE);
+  };
 
   root.querySelector('#add-inv').onclick = () => inventoryForm();
 

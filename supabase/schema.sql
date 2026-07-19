@@ -41,10 +41,13 @@ create table if not exists volunteers (
   phone text,
   address text,
   birthday date,
+  birthday_heb jsonb,
   role_type text,
   availability text,
   created_at timestamptz default now()
 );
+
+alter table volunteers add column if not exists birthday_heb jsonb;
 
 create table if not exists contacts (
   id text primary key,
@@ -148,7 +151,29 @@ create table if not exists orders (
   created_at timestamptz default now()
 );
 
+-- שינוע שבועי / ערכות שבת (מתאפס שבועית לפי week_key)
+create table if not exists weekly (
+  id text primary key,
+  mother_id text references mothers(id) on delete cascade,
+  kind text,               -- 'meal' | 'shabbat'
+  week_key text,
+  done boolean default false,
+  driver_id text references volunteers(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+-- רשימת קניות
+create table if not exists shopping (
+  id text primary key,
+  item_id text,
+  name text,
+  done boolean default false,
+  created_at timestamptz default now()
+);
+
 -- ---------- אינדקסים ----------
+create index if not exists idx_weekly_week on weekly(week_key);
+create index if not exists idx_weekly_driver on weekly(driver_id);
 create index if not exists idx_meals_date on meals(date);
 create index if not exists idx_meals_mother on meals(mother_id);
 create index if not exists idx_meals_cook on meals(cook_id);
@@ -205,6 +230,8 @@ alter table events enable row level security;
 alter table timeline enable row level security;
 alter table notes enable row level security;
 alter table orders enable row level security;
+alter table weekly enable row level security;
+alter table shopping enable row level security;
 
 -- ------------------------------------------------------------
 --  הרשאות גישה ל-Data API.
@@ -242,7 +269,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['mothers','volunteers','contacts','meals','kits',
-                           'birthGifts','yearGifts','events','timeline','orders']
+                           'birthGifts','yearGifts','events','timeline','orders',
+                           'shopping']
   loop
     execute format(
       'create policy staff_all on %I for all to authenticated using (is_staff()) with check (is_staff())', t
@@ -277,6 +305,24 @@ create policy mothers_own_assignment on mothers for select to authenticated
       select 1 from meals m
       where m.mother_id = mothers.id
         and (m.cook_id = my_volunteer_id() or m.driver_id = my_volunteer_id())
+    )
+  );
+
+-- ---------- שינוע שבועי / ערכות שבת ----------
+-- מנהלות: הכל. משנעת: רואה ומעדכנת את מה ששויך אליה.
+create policy weekly_staff on weekly for all to authenticated
+  using (is_staff()) with check (is_staff());
+create policy weekly_own on weekly for select to authenticated
+  using (driver_id = my_volunteer_id());
+create policy weekly_own_update on weekly for update to authenticated
+  using (driver_id = my_volunteer_id()) with check (driver_id = my_volunteer_id());
+
+-- משנעת רואה את פרטי היולדות שברשימת השינוע שלה
+create policy mothers_own_weekly on mothers for select to authenticated
+  using (
+    exists (
+      select 1 from weekly w
+      where w.mother_id = mothers.id and w.driver_id = my_volunteer_id()
     )
   );
 

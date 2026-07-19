@@ -600,8 +600,8 @@ function bindEvents(root) {
   root.querySelector('#add-event').onclick = () => eventForm();
 }
 
-function eventForm(id) {
-  const ev = id ? DB.find('events', id) : {};
+function eventForm(id, presetDate) {
+  const ev = id ? DB.find('events', id) : (presetDate ? { date: presetDate } : {});
   UI.modal(id ? 'עריכת מפגש' : 'בוקר ליולדות חדש', `
     <div id="ef">
       ${UI.field('תאריך *', 'date', ev.date, 'date')}
@@ -827,32 +827,78 @@ function hebParts(date) {
   };
 }
 
-function screenCalendar() {
-  const base = new Date();
-  base.setDate(1);
-  base.setMonth(base.getMonth() + calOffset);
-  const year = base.getFullYear();
-  const month = base.getMonth();
+// רשימת חודשי השנה העברית (לפי השנה — מטפל בשנה מעוברת)
+function hebMonthsOfYear(hy) {
+  const months = [];
+  let d = new Date(hy - 3761, 7, 1); // אוגוסט של השנה הלועזית המשוערת
+  let g = 0;
+  while (hebParts(d).yearNum < hy && g < 420) { d.setDate(d.getDate() + 1); g++; }
+  g = 0;
+  while (hebParts(d).yearNum === hy && g < 420) {
+    const mn = hebParts(d).month;
+    if (!months.includes(mn)) months.push(mn);
+    d.setDate(d.getDate() + 1); g++;
+  }
+  return months;
+}
 
-  const first = new Date(year, month, 1);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const startDay = first.getDay(); // 0=ראשון
+// המרת תאריך עברי (שנה, שם-חודש, יום) לתאריך לועזי — עם מטמון
+const __h2g = {};
+function hebrewToGregorian(hy, hMonth, hDay) {
+  const key = hy + '|' + hMonth + '|' + hDay;
+  if (__h2g[key]) return new Date(__h2g[key]);
+  let d = new Date(hy - 3762, 7, 1);
+  d.setHours(12, 0, 0, 0); // צהריים — עקבי עם שאר החישובים
+  for (let i = 0; i < 800; i++) {
+    const p = hebParts(d);
+    if (p.yearNum === hy && p.month === hMonth && p.dayNum === hDay) { __h2g[key] = d.toISOString(); return new Date(d); }
+    d.setDate(d.getDate() + 1);
+  }
+  return null;
+}
+
+// מוצא את התאריך הלועזי של א' בחודש העברי שמכיל את התאריך הנתון
+function hebMonthStart(ref) {
+  const d = new Date(ref);
+  d.setHours(12, 0, 0, 0);
+  const day = hebParts(d).dayNum;
+  d.setDate(d.getDate() - (day - 1));
+  return d;
+}
+
+// תאריך רפרנס נוכחי ללוח (ISO)
+let calRefISO = todayISO();
+
+function screenCalendar() {
+  const ref = new Date(calRefISO + 'T12:00:00');
+  const start = hebMonthStart(ref); // א' בחודש העברי (תאריך לועזי)
+
+  // אורך החודש העברי: סופרים ימים עד שהחודש משתנה
+  const startHeb = hebParts(start);
+  const days = [];
+  let d = new Date(start);
+  while (hebParts(d).month === startHeb.month && hebParts(d).yearNum === startHeb.yearNum) {
+    days.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+    if (days.length > 31) break;
+  }
 
   const todayStr = todayISO();
-  const gregMonth = base.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+  const dayNames = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+  const startWeekday = start.getDay();
 
-  // שם החודש/ים העברי/ים בטווח
-  const hStart = hebParts(new Date(year, month, 1));
-  const hEnd = hebParts(new Date(year, month, daysInMonth));
-  const hebTitle = hStart.month === hEnd.month
-    ? `${hStart.month} ${hStart.year}`
-    : `${hStart.month}–${hEnd.month} ${hEnd.year}`;
+  // טווח החודשים הלועזיים
+  const g0 = days[0].toLocaleDateString('he-IL', { month: 'long' });
+  const gN = days[days.length - 1].toLocaleDateString('he-IL', { month: 'long' });
+  const gYear = days[days.length - 1].getFullYear();
+  const gregLabel = g0 === gN ? `${g0} ${gYear}` : `${g0}–${gN} ${gYear}`;
 
   const cells = [];
-  for (let i = 0; i < startDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  days.forEach((dt) => cells.push(dt));
 
-  const dayNames = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+  const eventsByDate = {};
+  DB.all('events').forEach((ev) => { (eventsByDate[ev.date] = eventsByDate[ev.date] || []).push(ev); });
 
   return `
     <div class="screen-head">
@@ -866,28 +912,29 @@ function screenCalendar() {
       <div class="cal-nav">
         <button id="cal-prev">${icon('back', 18)}</button>
         <div class="cal-title">
-          <div class="cal-heb">${e(hebTitle)}</div>
-          <div class="cal-greg">${e(gregMonth)}</div>
+          <div class="cal-heb">${e(startHeb.month)} ${e(startHeb.year)}</div>
+          <div class="cal-greg">${e(gregLabel)}</div>
         </div>
         <button id="cal-next" style="transform:scaleX(-1)">${icon('back', 18)}</button>
       </div>
 
       <div class="cal-grid cal-head">
-        ${dayNames.map((d) => `<div class="cal-dayname">${d}</div>`).join('')}
+        ${dayNames.map((dn) => `<div class="cal-dayname">${dn}</div>`).join('')}
       </div>
 
       <div class="cal-grid">
-        ${cells.map((d) => {
-          if (!d) return '<div class="cal-cell empty"></div>';
-          const dateObj = new Date(year, month, d);
-          const iso = dateObj.toISOString().slice(0, 10);
-          const heb = hebParts(dateObj);
+        ${cells.map((dt) => {
+          if (!dt) return '<div class="cal-cell empty"></div>';
+          const iso = dt.toISOString().slice(0, 10);
+          const heb = hebParts(dt);
           const isToday = iso === todayStr;
+          const hasEvent = eventsByDate[iso];
           return `
-            <div class="cal-cell ${isToday ? 'today' : ''}">
-              <span class="cal-greg-num">${d}/${month + 1}</span>
+            <button class="cal-cell ${isToday ? 'today' : ''} ${hasEvent ? 'has-event' : ''}" data-cal-date="${iso}">
+              <span class="cal-greg-num">${dt.getDate()}/${dt.getMonth() + 1}</span>
               <span class="cal-heb-num">${heb.day}</span>
-            </div>`;
+              ${hasEvent ? '<span class="cal-dot"></span>' : ''}
+            </button>`;
         }).join('')}
       </div>
     </div>
@@ -895,8 +942,43 @@ function screenCalendar() {
 }
 
 function bindCalendar(root) {
-  root.querySelector('#cal-prev').onclick = () => { calOffset++; render(); };
-  root.querySelector('#cal-next').onclick = () => { calOffset--; render(); };
+  root.querySelector('#cal-prev').onclick = () => {
+    const start = hebMonthStart(new Date(calRefISO + 'T12:00:00'));
+    start.setDate(start.getDate() - 1); // יום לפני א' = החודש הקודם
+    calRefISO = start.toISOString().slice(0, 10);
+    render();
+  };
+  root.querySelector('#cal-next').onclick = () => {
+    const ref = new Date(calRefISO + 'T12:00:00');
+    const start = hebMonthStart(ref);
+    let d = new Date(start);
+    const sh = hebParts(start);
+    while (hebParts(d).month === sh.month && hebParts(d).yearNum === sh.yearNum) { d.setDate(d.getDate() + 1); }
+    calRefISO = d.toISOString().slice(0, 10);
+    render();
+  };
+  root.querySelectorAll('[data-cal-date]').forEach((el) => {
+    el.onclick = () => calDateActions(el.dataset.calDate);
+  });
+}
+
+// לחיצה על תאריך בלוח — הצגת אירועים + הוספת אירוע
+function calDateActions(iso) {
+  const evs = DB.all('events').filter((ev) => ev.date === iso);
+  const heb = hebParts(new Date(iso + 'T12:00:00'));
+  UI.modal(`${heb.day} ${heb.month} · ${fmtDateFull(iso)}`, `
+    ${evs.length ? evs.map((ev) => `
+      <div class="row" data-cal-event="${ev.id}">
+        <div class="icon-btn">${icon('coffee')}</div>
+        <div class="row-main"><div class="row-title">${e(ev.location || 'אירוע')}</div><div class="row-sub">${e(ev.speakers || '')}</div></div>
+      </div>`).join('') : '<div class="empty-inline" style="margin-bottom:10px">אין אירועים ביום זה</div>'}
+    <button class="btn" id="cal-add-event">${icon('plus')} הוספת אירוע ליום זה</button>
+  `, (c) => {
+    c.querySelector('#cal-add-event').onclick = () => { UI.closeModal(); eventForm(null, iso); };
+    c.querySelectorAll('[data-cal-event]').forEach((el) => {
+      el.onclick = () => { UI.closeModal(); eventDetail(el.dataset.calEvent); };
+    });
+  });
 }
 
 // ============================================================
@@ -956,36 +1038,47 @@ function bindTorah(root) {
 // ============================================================
 //  שכונות — יולדות מקובצות לפי אזור
 // ============================================================
+let openNbhd = ''; // שכונה פתוחה כרגע (ריק = כולן סגורות)
+
 function screenNeighborhoods() {
   const active = DB.all('mothers').filter((m) => m.status === 'active');
   return `
     <div class="screen-head">
       <div>
         <h2 class="screen-title">${icon('mappin')} שכונות</h2>
-        <div class="screen-sub">יולדות פעילות לפי אזור</div>
+        <div class="screen-sub">לחצי על שכונה לצפייה ביולדות</div>
       </div>
     </div>
 
     ${NEIGHBORHOODS.map((n) => {
       const inN = active.filter((m) => m.neighborhood === n.id);
+      const isOpen = openNbhd === n.id;
       return `
-        <div class="section-title">
-          <span class="nbhd-dot" style="background:${n.color}"></span> ${e(n.name)} (${inN.length})
-        </div>
-        ${inN.length ? inN.map((m) => `
-          <div class="row" data-mother="${m.id}">
-            <div class="avatar">${e(UI.initials(m.motherName))}</div>
-            <div class="row-main">
-              <div class="row-title">${e(m.motherName)} ${e(m.lastName || '')}</div>
-              <div class="row-sub">${e(m.address || '')}</div>
-            </div>
-            ${m.phone ? `<a class="icon-btn wa" href="tel:${escapeAttr(m.phone)}">${icon('phone')}</a>` : ''}
-          </div>`).join('') : '<div class="empty-inline">אין יולדות באזור זה</div>'}`;
+        <div class="nbhd-block">
+          <button class="nbhd-header ${isOpen ? 'open' : ''}" data-nbhd-toggle="${n.id}" style="border-inline-start:5px solid ${n.color}">
+            <span class="nbhd-header-name"><span class="nbhd-dot" style="background:${n.color}"></span> ${e(n.name)}</span>
+            <span class="nbhd-count">${inN.length} ${icon(isOpen ? 'minus' : 'plus', 15)}</span>
+          </button>
+          ${isOpen ? `<div class="nbhd-body">
+            ${inN.length ? inN.map((m) => `
+              <div class="row" data-mother="${m.id}">
+                <div class="avatar">${e(UI.initials(m.motherName))}</div>
+                <div class="row-main">
+                  <div class="row-title">${e(m.motherName)} ${e(m.lastName || '')}</div>
+                  <div class="row-sub">${e(m.address || '')}</div>
+                </div>
+                ${m.phone ? `<a class="icon-btn wa" href="tel:${escapeAttr(m.phone)}">${icon('phone')}</a>` : ''}
+              </div>`).join('') : '<div class="empty-inline">אין יולדות באזור זה</div>'}
+          </div>` : ''}
+        </div>`;
     }).join('')}
   `;
 }
 
 function bindNeighborhoods(root) {
+  root.querySelectorAll('[data-nbhd-toggle]').forEach((el) => {
+    el.onclick = () => { openNbhd = (openNbhd === el.dataset.nbhdToggle) ? '' : el.dataset.nbhdToggle; render(); };
+  });
   root.querySelectorAll('[data-mother]').forEach((el) => {
     el.onclick = () => go('mother-profile', el.dataset.mother);
   });
