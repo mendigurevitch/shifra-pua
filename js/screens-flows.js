@@ -1071,7 +1071,8 @@ function bindImages(root) {
       const f = input.files[0];
       if (!f) return;
       UI.toast('מעלה...');
-      const path = Date.now() + '-' + f.name.replace(/[^\w.\-]/g, '_');
+      // תיקיית private תואמת לתבנית ההרשאות הסטנדרטית של Supabase
+      const path = 'private/' + Date.now() + '-' + f.name.replace(/[^\w.\-]/g, '_');
       const { error } = await window.__sb.storage.from('images').upload(path, f);
       if (error) return UI.toast('שגיאה: ' + error.message);
       UI.toast('הועלה');
@@ -1088,7 +1089,7 @@ async function loadImages(root) {
     list.innerHTML = '<div class="empty-inline" style="padding:20px 0">תמונות זמינות רק במצב מחובר לענן</div>';
     return;
   }
-  const res = await window.__sb.storage.from('images').list('', { limit: 100 });
+  const res = await window.__sb.storage.from('images').list('private', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
   if (res.error) {
     list.innerHTML = '<div class="empty-inline" style="padding:20px 0">' + e(res.error.message) + '</div>';
     return;
@@ -1099,7 +1100,7 @@ async function loadImages(root) {
     return;
   }
   list.innerHTML = '<div class="img-grid">' + files.map((f) => {
-    const url = window.__sb.storage.from('images').getPublicUrl(f.name).data.publicUrl;
+    const url = window.__sb.storage.from('images').getPublicUrl('private/' + f.name).data.publicUrl;
     return '<a href="' + url + '" target="_blank" class="img-thumb"><img src="' + url + '" loading="lazy"></a>';
   }).join('') + '</div>';
 }
