@@ -398,6 +398,16 @@ function screenSettings() {
       <button class="btn btn-ghost btn-sm" style="flex:1" id="export-all">${icon('download')} ייצוא נתונים</button>
       <button class="btn btn-ghost btn-sm" style="flex:1" id="import-all">${icon('filetext')} ייבוא</button>
     </div>
+
+    ${me.role === 'admin' ? `
+      <div class="section-title" style="color:var(--danger)">${icon('alert')} איפוס</div>
+      <div class="card" style="border:1.5px solid #FBCFE0">
+        <div class="card-sub" style="line-height:1.5;margin-bottom:10px">
+          מחיקת כל היולדות והנתונים הקשורים (ארוחות, מתנות, ציר זמן).
+          שימושי לניקוי לפני הזנת רשימה אמיתית. הפעולה אינה הפיכה.
+        </div>
+        <button class="btn btn-danger btn-sm" id="reset-mothers" style="width:auto">${icon('trash')} מחיקת כל היולדות</button>
+      </div>` : ''}
   `;
 }
 
@@ -433,6 +443,23 @@ function bindSettings(root) {
     a.download = `shifra-backup-${todayISO()}.json`;
     a.click();
     UI.toast('הגיבוי הורד');
+  };
+
+  const reset = root.querySelector('#reset-mothers');
+  if (reset) reset.onclick = () => {
+    const n = DB.all('mothers').length;
+    UI.confirm('מחיקת כל היולדות', `למחוק ${n} יולדות וכל הנתונים הקשורים? הפעולה אינה הפיכה.`, async () => {
+      reset.disabled = true;
+      reset.innerHTML = 'מוחקת...';
+      // מחיקה דרך ה-API המאומת של המשתמשת — עובר דרך ה-RLS
+      const cols = ['meals', 'kits', 'birthGifts', 'yearGifts', 'timeline', 'mothers'];
+      cols.forEach((col) => {
+        DB.all(col).slice().forEach((x) => DB.remove(col, x.id));
+      });
+      UI.toast(`נמחקו ${n} יולדות`);
+      route = { name: 'dashboard', param: null };
+      render();
+    });
   };
 
   root.querySelector('#import-all').onclick = () => {
