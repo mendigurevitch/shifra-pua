@@ -30,12 +30,37 @@ const CONFIG = {
   YEAR_GIFT_REMINDER_DAYS: 7
 };
 
+// 8 שכונות, כל אחת בצבע מובחן. היולדת נצבעת אוטומטית לפי השכונה.
 const NEIGHBORHOODS = [
-  { id: 'neve', name: 'נווה אביבים', color: 'var(--nbhd-neve)' },
-  { id: 'gush', name: 'הגוש הגדול', color: 'var(--nbhd-gush)' },
-  { id: 'yeruka', name: 'רמת אביב הירוקה', color: 'var(--nbhd-yeruka)' },
-  { id: 'gimel', name: "רמת אביב ג'", color: 'var(--nbhd-gimel)' }
+  { id: 'chen', name: 'אזורי חן', color: '#10B981' },        // ירוק
+  { id: 'kochav', name: 'כוכב הצפון', color: '#3B82F6' },     // כחול
+  { id: 'neve', name: 'נווה אביבים', color: '#F59E0B' },      // כתום
+  { id: 'chadasha', name: 'רמת אביב החדשה', color: '#A855F7' }, // סגול
+  { id: 'afeka', name: 'אפקה', color: '#EC4899' },            // ורוד
+  { id: 'lamed', name: 'למד', color: '#14B8A6' },             // טורקיז
+  { id: 'gimel', name: "רמת אביב ג'", color: '#EAB308' },      // צהוב
+  { id: 'yeruka', name: 'רמת אביב הירוקה', color: '#EF4444' }  // אדום
 ];
+
+// זיהוי שכונה מטקסט חופשי (הודעת וואטסאפ / כתובת) — כולל כתיבים חלופיים
+function detectNeighborhood(text) {
+  if (!text) return '';
+  const t = String(text);
+  const aliases = [
+    ['chen', ['אזורי חן', 'אזור חן', 'אזורי-חן']],
+    ['kochav', ['כוכב הצפון', 'כוכב צפון']],
+    ['neve', ['נווה אביבים', 'נוה אביבים', 'נווה-אביבים']],
+    ['chadasha', ['רמת אביב החדשה', 'רמ"א החדשה', 'רמת-אביב החדשה']],
+    ['afeka', ['אפקה']],
+    ['lamed', ['למד', "רמת אביב ל'", 'רמת אביב למד']],
+    ['gimel', ["רמת אביב ג", 'רמת אביב ג׳', "רמ\"א ג", 'רמת-אביב ג']],
+    ['yeruka', ['רמת אביב הירוקה', 'הירוקה', 'רמ"א הירוקה']]
+  ];
+  for (const [id, names] of aliases) {
+    if (names.some((n) => t.includes(n))) return id;
+  }
+  return '';
+}
 
 const ROLES = {
   admin: 'מנהלת ראשית',

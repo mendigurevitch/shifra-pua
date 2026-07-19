@@ -21,6 +21,7 @@ create table if not exists mothers (
   mother_name text not null,
   last_name text,
   child_name text,
+  child_gender text,
   phone text,
   address text,
   entry_code text,
@@ -31,6 +32,8 @@ create table if not exists mothers (
   status text default 'active',
   created_at timestamptz default now()
 );
+
+alter table mothers add column if not exists child_gender text;
 
 create table if not exists volunteers (
   id text primary key,

@@ -276,19 +276,21 @@ function screenMothers() {
   `;
 }
 
-// אייקוני שלבים בכרטיס — הפעיל מודגש בוורוד
+// מד התקדמות בכרטיס — מימין (ארוחות, ההתחלה) לשמאל (גיל שנה, הסוף).
+// ב-RTL הפריט הראשון במערך מופיע מימין, ולכן ארוחות ראשון.
 function stageIcons(m) {
   const stages = [
-    { id: 'yearGift', icon: 'cake', label: 'גיל שנה' },
-    { id: 'birthGift', icon: 'gift', label: 'מתנה' },
-    { id: 'torah', icon: 'scroll', label: 'אות' },
+    { id: 'meals', icon: 'coffee', label: 'ארוחות' },
     { id: 'shabbat', icon: 'utensils', label: 'שבת' },
-    { id: 'meals', icon: 'coffee', label: 'ארוחות' }
+    { id: 'torah', icon: 'scroll', label: 'אות' },
+    { id: 'birthGift', icon: 'gift', label: 'מתנה' },
+    { id: 'yearGift', icon: 'cake', label: 'גיל שנה' }
   ];
   const active = currentStage(m);
+  const activeIdx = stages.findIndex((s) => s.id === active);
   return `<div class="stage-icons">
-    ${stages.map((s) => `
-      <div class="stage-ico ${active === s.id ? 'active' : ''}" title="${s.label}">
+    ${stages.map((s, i) => `
+      <div class="stage-ico ${i < activeIdx ? 'done' : ''} ${active === s.id ? 'active' : ''}" title="${s.label}">
         ${icon(s.icon, 15)}<span>${s.label}</span>
       </div>`).join('')}
   </div>`;
@@ -306,6 +308,13 @@ function currentStage(m) {
   return 'yearGift';
 }
 
+// ציור תינוק בכרטיס — ורוד לבת, כחול לבן, בלי כיתוב
+function babyIcon(gender) {
+  const color = gender === 'girl' ? '#EC4899' : gender === 'boy' ? '#3B82F6' : 'var(--text-muted)';
+  const bg = gender === 'girl' ? '#FCE7F3' : gender === 'boy' ? '#DBEAFE' : 'var(--bg)';
+  return `<span class="baby-badge" style="background:${bg};color:${color}">${icon('baby', 16)}</span>`;
+}
+
 function wazeLink(address) {
   return `https://waze.com/ul?q=${encodeURIComponent(address || '')}&navigate=yes`;
 }
@@ -316,6 +325,7 @@ function motherCard(m) {
     <div class="mother-card" style="border-inline-start:4px solid ${color}">
       <div class="mc-top">
         <div class="mc-name-row">
+          ${babyIcon(m.childGender)}
           <span class="mc-name">${e(m.motherName)} ${e(m.lastName || '')}</span>
           <button class="mc-clock" data-profile="${m.id}">${icon('clock', 15)}</button>
         </div>
@@ -387,6 +397,14 @@ function motherForm(id, prefill) {
         ${UI.field('שם האמא *', 'motherName', m.motherName)}
         ${UI.field('שם משפחה', 'lastName', m.lastName)}
       </div>
+      <div class="field">
+        <label>מין הילוד</label>
+        <div class="gender-pick">
+          <button type="button" class="gender-btn girl ${m.childGender === 'girl' ? 'active' : ''}" data-gender="girl">${icon('baby', 22)}</button>
+          <button type="button" class="gender-btn boy ${m.childGender === 'boy' ? 'active' : ''}" data-gender="boy">${icon('baby', 22)}</button>
+        </div>
+        <input type="hidden" name="childGender" value="${escapeAttr(m.childGender || '')}">
+      </div>
       <div class="field-row">
         ${UI.field('שם הילד/ה', 'childName', m.childName)}
         ${UI.field('תאריך לידה', 'birthDate', m.birthDate, 'date')}
@@ -404,6 +422,15 @@ function motherForm(id, prefill) {
       <button class="btn" id="mf-save">${icon('check')} שמירה</button>
     </div>
   `, (c) => {
+    // בורר מין: לחיצה מסמנת ומעדכנת את השדה הנסתר
+    c.querySelectorAll('[data-gender]').forEach((btn) => {
+      btn.onclick = () => {
+        c.querySelectorAll('[data-gender]').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        c.querySelector('[name="childGender"]').value = btn.dataset.gender;
+      };
+    });
+
     c.querySelector('#mf-save').onclick = () => {
       const data = UI.readForm(c.querySelector('#mf'));
       if (!data.motherName) return UI.toast('חובה למלא שם אמא');
@@ -435,9 +462,9 @@ function parseMotherText(text) {
   const code = text.match(/קוד[:\s]*([0-9]{2,6}#?)/);
   if (code) out.entryCode = code[1];
 
-  // שכונה
-  const nb = NEIGHBORHOODS.find((n) => text.includes(n.name) || (n.id === 'gimel' && /רמת אביב ג/.test(text)));
-  if (nb) out.neighborhood = nb.id;
+  // שכונה — זיהוי חכם כולל כתיבים חלופיים
+  const nbId = detectNeighborhood(text);
+  if (nbId) out.neighborhood = nbId;
 
   // כתובת: שורה שמכילה מספר בית (רחוב + מספר)
   const addr = text.match(/([א-ת'"]+(?:\s[א-ת'"]+)*\s\d{1,3})/);
@@ -505,10 +532,10 @@ function importMothersExcel() {
           rows.slice(1).forEach((line) => {
             const cols = line.split(',').map((s) => s.replace(/^"|"$/g, '').trim());
             if (!cols[0]) return;
-            const nb = NEIGHBORHOODS.find((n) => n.name === cols[4]);
+            const nbId = detectNeighborhood(cols[4]) || detectNeighborhood(cols[5]);
             DB.addMother({
               motherName: cols[0], lastName: cols[1] || '', childName: cols[2] || '',
-              phone: cols[3] || '', neighborhood: nb ? nb.id : '', address: cols[5] || '',
+              phone: cols[3] || '', neighborhood: nbId, address: cols[5] || '',
               birthDate: cols[6] || ''
             });
             count++;
