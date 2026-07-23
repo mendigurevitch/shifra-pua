@@ -112,6 +112,27 @@ const UI = {
   }
 };
 
+// מקטין תמונה לריבוע קטן ומחזיר data-URL — כדי שתמונות מוצר יישארו קלות
+function shrinkImage(file, maxSize, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => UI.toast('לא ניתן לקרוא את התמונה');
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 // XSS-safe: שמות והערות מוזנים ע"י משתמשות ומוזרקים ל-innerHTML
 function escapeHTML(s) {
   return String(s == null ? '' : s)

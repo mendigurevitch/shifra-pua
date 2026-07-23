@@ -30,7 +30,7 @@ function screenDashboard() {
     <div class="card">
       <div class="wk-head">
         <div class="card-title" style="display:flex;align-items:center;gap:7px">${icon(iconName, 16)} ${title} (${list.length})</div>
-        ${list.length ? `<button class="btn btn-wa btn-sm" style="width:auto" data-send-week="${kind}">${icon('whatsapp')} למשנעת</button>` : ''}
+        ${list.length && canSendDriver() ? `<button class="btn btn-wa btn-sm" style="width:auto" data-send-week="${kind}">${icon('whatsapp')} למשנעת</button>` : ''}
       </div>
       ${list.length ? list.map((w) => {
         const m = DB.find('mothers', w.motherId);
@@ -290,11 +290,12 @@ function screenMothers() {
       </div>
     </div>
 
-    <div class="btn-row" style="margin-bottom:12px">
-      <button class="btn btn-sm" id="add-mother">${icon('plus')} הוספת יולדת</button>
-      <button class="btn btn-ghost btn-sm" id="import-xls">${icon('filetext')} ייבוא אקסל</button>
-      <button class="btn btn-ghost btn-sm" id="add-ai">${icon('message')} מהודעה</button>
-    </div>
+    ${canAddMothers() ? `
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn btn-sm" id="add-mother">${icon('plus')} הוספת יולדת</button>
+        <button class="btn btn-ghost btn-sm" id="import-xls">${icon('filetext')} ייבוא אקסל</button>
+        <button class="btn btn-ghost btn-sm" id="add-ai">${icon('message')} מהודעה</button>
+      </div>` : ''}
 
     <div class="chips">
       <button class="chip ${mothersFilter.status === 'active' ? 'active' : ''}" data-status="active">פעילות</button>
@@ -343,10 +344,14 @@ function stageIcons(m) {
   const active = currentStage(m);
   const activeIdx = stages.findIndex((s) => s.id === active);
   return `<div class="stage-icons">
-    ${stages.map((s, i) => `
-      <button class="stage-ico ${i < activeIdx ? 'done' : ''} ${active === s.id ? 'active' : ''}" title="${s.label}" data-stage-act="${s.id}" data-stage-mother="${m.id}">
+    ${stages.map((s, i) => {
+      const allowed = canStage(s.id);
+      return `
+      <button class="stage-ico ${i < activeIdx ? 'done' : ''} ${active === s.id ? 'active' : ''} ${allowed ? '' : 'locked'}" title="${s.label}"
+        ${allowed ? `data-stage-act="${s.id}" data-stage-mother="${m.id}"` : 'disabled'}>
         ${icon(s.icon, 15)}<span>${s.label}</span>
-      </button>`).join('')}
+      </button>`;
+    }).join('')}
   </div>`;
 }
 
@@ -436,7 +441,7 @@ function motherCard(m) {
           <span class="mc-name">${e(m.motherName)} ${e(m.lastName || '')}</span>
           <button class="mc-clock" data-profile="${m.id}">${icon('clock', 15)}</button>
         </div>
-        ${m.neighborhood ? `<span class="mc-nbhd" style="background:${color};color:#fff">${e(nbhdName(m.neighborhood))}</span>` : ''}
+        ${m.neighborhood ? `<span class="mc-nbhd" style="background:${color};color:${contrastText(color)}">${e(nbhdName(m.neighborhood))}</span>` : ''}
       </div>
 
       <div class="mc-info">
@@ -682,7 +687,7 @@ function parseMothersBulk(text) {
   while ((pm = phoneRe.exec(raw))) phones.push({ idx: pm.index, end: pm.index + pm[0].length, phone: normPhone(pm[0]) });
 
   const ADDR = /^(רחוב|קומה|דירה|קוד|מעלית|כניסה|אין|יש|שומר|סולמית|כוכבית|מפתח|ואז|בעלה|להתקשר|ימין|שמאל|פעמון|טלפון|מסרה|אמרה|קרקע|קומת|דלת|ב|א|ג|ד|ה|ו)$/;
-  const junk = /^(בכניסה|פתוחה|אפס|לא |והיא|ירד|תל ברוך|בית |קודם|כדאי|במעלית|יגיעו|או |שכונת|נווה אביבים יולדת|ללא |חיים לבנון|לוי אשכול|מעונות|יולדת|מתן|כרמל לוי)/;
+  const junk = /^(בכניסה|פתוחה|אפס|לא |והיא|ירד|תל ברוך|בית |קודם|כדאי|במעלית|יגיעו|או |שכונת|נווה אביבים יולדת|ללא |חיים לבנון|לוי אשכול|מעונות|יולדת|מתן|כרמל לוי|גימל|הירוקה|נווה|נוה|רמת אביב|נאות|כוכב הצפון|אזורי|משפחת|קשאני|בייבי|התינוק|התינוקת)/;
   const strip = (s) => s.replace(/\*[^*]*\*/g, ' ').replace(/[+\d()#*׳'"?,.\-–]/g, ' ').replace(/\s+/g, ' ').trim();
 
   const out = []; const seen = new Set();
@@ -700,18 +705,28 @@ function parseMothersBulk(text) {
     // מסירים שמות שכונות מהטקסט כדי שלא ידלפו לשם/כתובת
     const stripNb = (s) => { NEIGHBORHOODS.forEach((n) => { s = s.split(n.name).join(' '); }); return s.replace(/נוה אביבים|הירוקה|גימל|שכונת/g, ' '); };
 
+    // כתובת קודם — צריך את מיקומה כדי לזהות שם שמופיע אחרי הטלפון ולפני הכתובת
+    const afterClean = stripNb(afterSeg.replace(/\*[^*]*\*/g, ' '));
+    const addrM = afterClean.match(/([א-ת'׳"]{2,}(?:\s[א-ת'׳"]{2,}){0,2}\s\d{1,3})(?:[,\s]+קומה\s?[\d.]+)?(?:[,\s]+דירה\s?\d+)?/);
+    const address = addrM ? addrM[0].replace(/\s+/g, ' ').trim().slice(0, 55) : '';
+
     let name = '';
+    // 1. שם ב-* * (למשל *גל פלג*)
     const nm = headers.filter((h) => !h.nbId && h.idx >= prevEnd && h.idx < p.idx && /[א-ת]/.test(h.txt) && !/^\d/.test(h.txt) && h.txt.length < 20);
     if (nm.length) name = nm[nm.length - 1].txt;
-    else {
+    // 2. שם לפני הטלפון (למשל "מזי 0542...")
+    if (!name) {
       let s = stripNb(beforeSeg.replace(/\*[^*]*\*/g, ' ')).replace(/^.*[0-9)]/, '');
       const w = strip(s).split(' ').filter((x) => /[א-ת]/.test(x) && x.length >= 2 && !ADDR.test(x));
       name = w.slice(0, 3).join(' ');
     }
+    // 3. שם אחרי הטלפון, לפני הכתובת (למשל "0503... 1. נויה בן זקן האמוראים 12")
+    if (!name) {
+      const beforeAddr = addrM ? afterClean.slice(0, afterClean.indexOf(addrM[0])) : afterClean;
+      const w = strip(beforeAddr).replace(/^\d+\.?\s*/, '').split(' ').filter((x) => /[א-ת]/.test(x) && x.length >= 2 && !ADDR.test(x));
+      name = w.slice(0, 3).join(' ');
+    }
     if (name && junk.test(name)) name = '';
-
-    const addrM = afterSeg.replace(/\*[^*]*\*/g, ' ').match(/([א-ת'׳"]{2,}(?:\s[א-ת'׳"]{2,}){0,2}\s\d{1,3})(?:[,\s]+קומה\s?[\d.]+)?(?:[,\s]+דירה\s?\d+)?/);
-    const address = addrM ? addrM[0].replace(/\s+/g, ' ').trim().slice(0, 55) : '';
     const codeM = afterSeg.match(/קוד[^0-9*#]{0,8}(\*?\d[\d*#]{1,6})/);
     const babyM = afterSeg.match(/(תינוקת|התינוקת)\s*:?\s*([א-ת' ]{2,20})/) || afterSeg.match(/(תינוק|בייבי|הבייבי|שם התינוק)\s*:?\s*([א-ת' ]{2,20})/);
     let childName = '', childGender = '';
@@ -1236,6 +1251,7 @@ function invCard(i) {
   return `
     <div class="inv-card ${low ? 'low' : ''}">
       <div class="inv-card-top">
+        ${i.image ? `<img class="inv-thumb" src="${escapeAttr(i.image)}" alt="">` : ''}
         <div class="inv-name">${e(i.name)}</div>
         <button class="inv-edit" data-inv="${i.id}">${icon('edit', 15)}</button>
       </div>
@@ -1341,10 +1357,46 @@ function inventoryForm(id) {
         ${UI.field('סף מינימום', 'minQty', i.minQty, 'number')}
       </div>
       ${UI.field('יחידה (יח׳ / שקיות וכו׳)', 'unit', i.unit || 'יח')}
+
+      <div class="field">
+        <label>תמונת המוצר</label>
+        <div class="img-pick">
+          <div class="img-pick-preview" id="if-preview">
+            ${i.image ? `<img src="${escapeAttr(i.image)}" alt="">` : icon('package', 22)}
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="if-pick">${icon('filetext')} בחירת תמונה</button>
+          ${i.image ? `<button type="button" class="btn btn-ghost btn-sm" id="if-imgdel" style="color:var(--danger)">${icon('trash')}</button>` : ''}
+        </div>
+        <input type="hidden" name="image" value="${escapeAttr(i.image || '')}">
+      </div>
+
       <button class="btn" id="if-save">${icon('check')} שמירה</button>
       ${id ? `<button class="btn btn-ghost" id="if-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקה</button>` : ''}
     </div>
   `, (c) => {
+    // בחירת תמונה — מוקטנת לתמונה קטנה ונשמרת עם הפריט
+    const pick = c.querySelector('#if-pick');
+    if (pick) pick.onclick = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => {
+        const f = input.files[0];
+        if (!f) return;
+        shrinkImage(f, 160, (dataUrl) => {
+          c.querySelector('[name="image"]').value = dataUrl;
+          c.querySelector('#if-preview').innerHTML = `<img src="${dataUrl}" alt="">`;
+          UI.toast('התמונה נוספה');
+        });
+      };
+      input.click();
+    };
+    const imgDel = c.querySelector('#if-imgdel');
+    if (imgDel) imgDel.onclick = () => {
+      c.querySelector('[name="image"]').value = '';
+      c.querySelector('#if-preview').innerHTML = icon('package', 22);
+    };
+
     c.querySelector('#if-save').onclick = () => {
       const data = UI.readForm(c.querySelector('#if'));
       if (!data.name) return UI.toast('חובה למלא שם');

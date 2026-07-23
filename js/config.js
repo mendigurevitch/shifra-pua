@@ -37,11 +37,11 @@ const CONFIG = {
 const NEIGHBORHOODS = [
   { id: 'chen', name: 'אזורי חן', color: '#10B981' },        // ירוק
   { id: 'kochav', name: 'כוכב הצפון', color: '#3B82F6' },     // כחול
-  { id: 'neve', name: 'נווה אביבים', color: '#F59E0B' },      // כתום
+  { id: 'neve', name: 'נווה אביבים', color: '#F97316' },      // כתום
   { id: 'chadasha', name: 'רמת אביב החדשה', color: '#A855F7' }, // סגול
   { id: 'afeka', name: 'אפקה', color: '#EC4899' },            // ורוד
   { id: 'lamed', name: 'למד', color: '#14B8A6' },             // טורקיז
-  { id: 'gimel', name: "רמת אביב ג'", color: '#EAB308' },      // צהוב
+  { id: 'gimel', name: "רמת אביב ג'", color: '#FACC15' },      // צהוב בהיר
   { id: 'yeruka', name: 'רמת אביב הירוקה', color: '#EF4444' }  // אדום
 ];
 
@@ -94,6 +94,15 @@ const PERM_SCREENS = [
   { id: 'images', label: 'תמונות' },
   { id: 'messages', label: 'הודעות' },
   { id: 'reports', label: 'דוחות' }
+];
+
+// שלבים בכרטיס היולדת — לצורך הרשאות (על מה מותר ללחוץ)
+const STAGE_LABELS = [
+  { id: 'meals', label: 'ארוחות (שינוע שבועי)' },
+  { id: 'shabbat', label: 'ערכת שבת' },
+  { id: 'torah', label: 'אות בספר תורה' },
+  { id: 'birthGift', label: 'מתנת לידה (ארכיון)' },
+  { id: 'yearGift', label: 'מתנת גיל שנה' }
 ];
 
 // פרטים קבועים לייצוא אותיות בספר תורה (כתובת המשלוח + פרטי קשר)

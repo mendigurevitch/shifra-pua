@@ -20,6 +20,10 @@ create table if not exists users (
 
 alter table users add column if not exists allowed_screens jsonb;
 alter table users add column if not exists read_only boolean default false;
+alter table users add column if not exists allowed_stages jsonb;
+alter table users add column if not exists can_add_mothers boolean default true;
+alter table users add column if not exists can_send_driver boolean default true;
+alter table inventory add column if not exists image text;
 
 create table if not exists mothers (
   id text primary key,

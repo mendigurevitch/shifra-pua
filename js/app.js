@@ -60,6 +60,28 @@ function canView(name) {
   return me.allowedScreens.includes(name);
 }
 
+// האם מותר ללחוץ על שלב מסוים בכרטיס היולדת
+function canStage(stageId) {
+  const me = DB.me;
+  if (!me || me.role === 'admin') return true;
+  if (!Array.isArray(me.allowedStages)) return true; // null = הכל מותר
+  return me.allowedStages.includes(stageId);
+}
+
+// האם מותר להוסיף יולדות
+function canAddMothers() {
+  const me = DB.me;
+  if (!me || me.role === 'admin') return true;
+  return me.canAddMothers !== false;
+}
+
+// האם מותר לשלוח רשימת שינוע למשנעת
+function canSendDriver() {
+  const me = DB.me;
+  if (!me || me.role === 'admin') return true;
+  return me.canSendDriver !== false;
+}
+
 function render() {
   const app = document.getElementById('app');
   const me = DB.me;
@@ -541,6 +563,28 @@ function userForm(id) {
         <label for="uf-ro">צפייה בלבד (לא יכולה לערוך/להוסיף/למחוק)</label>
       </div>
 
+      <div class="section-title" style="margin:14px 0 8px">${icon('heart')} הרשאות — מה תוכל לעשות</div>
+      <div class="check-row">
+        <input type="checkbox" name="canAddMothers" id="uf-add" ${u.canAddMothers !== false ? 'checked' : ''}>
+        <label for="uf-add">הוספת יולדות (רגיל + מהודעה)</label>
+      </div>
+      <div class="check-row">
+        <input type="checkbox" name="canSendDriver" id="uf-drv" ${u.canSendDriver !== false ? 'checked' : ''}>
+        <label for="uf-drv">שליחת רשימת שינוע למשנעת בוואטסאפ</label>
+      </div>
+
+      <div class="card-sub" style="margin:10px 0 6px;line-height:1.5">
+        על אילו שלבים בכרטיס היולדת מותר לה ללחוץ (ריק = הכל):
+      </div>
+      <div class="perm-list">
+        ${STAGE_LABELS.map((s) => `
+          <div class="perm-row">
+            <input type="checkbox" data-stageperm="${s.id}" id="sp-${s.id}"
+              ${!Array.isArray(u.allowedStages) || u.allowedStages.includes(s.id) ? 'checked' : ''}>
+            <label for="sp-${s.id}">${e(s.label)}</label>
+          </div>`).join('')}
+      </div>
+
       <button class="btn" id="uf-save" style="margin-top:8px">${icon('check')} שמירה</button>
       ${id && id !== DB.me.id ? `<button class="btn btn-ghost" id="uf-del" style="margin-top:9px;color:var(--danger)">${icon('trash')} מחיקה</button>` : ''}
     </div>
@@ -553,6 +597,11 @@ function userForm(id) {
       const checked = [...c.querySelectorAll('[data-perm]:checked')].map((x) => x.dataset.perm);
       data.allowedScreens = checked.length === PERM_SCREENS.length ? null : checked;
       data.readOnly = !!data.readOnly;
+      data.canAddMothers = !!data.canAddMothers;
+      data.canSendDriver = !!data.canSendDriver;
+      // שלבים מותרים בכרטיס; אם הכל מסומן — null (הכל מותר)
+      const stagesChecked = [...c.querySelectorAll('[data-stageperm]:checked')].map((x) => x.dataset.stageperm);
+      data.allowedStages = stagesChecked.length === STAGE_LABELS.length ? null : stagesChecked;
       if (id) DB.update('users', id, data);
       else DB.insert('users', Object.assign({ active: true }, data));
       UI.closeModal();

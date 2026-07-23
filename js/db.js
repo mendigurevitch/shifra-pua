@@ -69,6 +69,16 @@ function nbhdColor(id) {
   return n ? n.color : 'var(--text-muted)';
 }
 
+// טקסט כהה על רקע בהיר (למשל צהוב) ולבן על רקע כהה — כדי שהצ'יפ יהיה קריא
+function contrastText(hex) {
+  const m = String(hex || '').match(/^#([0-9a-f]{6})$/i);
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.65 ? '#5A4300' : '#fff';
+}
+
 // ---------- empty / demo state ----------
 function emptyState() {
   const s = { currentUserId: null };
